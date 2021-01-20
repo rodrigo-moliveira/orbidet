@@ -1,0 +1,20 @@
+language: python
+
+matrix:
+  include:
+  # Create travis test builds using specific tox environment
+  - python: 3.6
+    env: TOX_ENV=py36
+  - python: 3.7
+    env: TOX_ENV=py37
+  - python: 3.8
+    env: TOX_ENV=py38
+
+install: 
+  - pip install tox coveralls
+
+script:
+  - tox -e $TOX_ENV
+
+after_success:
+  - coveralls
