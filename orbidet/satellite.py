@@ -1,32 +1,31 @@
-"""
-class with physical characteristics of satellite (used mostly in the force model):
-    *Drag Area [m^2]
-    *SRP Area [m^2]
-    *mass [kg]
-
-In my application these are all constant (but, if needed they may be time dependent)
-
-
-IMPORTANT NOTE: In the constructor variables should be provided in SI units
-"""
-
 class SatelliteSpecs():
+    """
+    class with physical characteristics of satellite:
+        *Drag Area [m^2]
+        *mass [kg]
+
+    In my application these values are constant, but, if needed, they may be time dependent
+    IMPORTANT NOTE: In the constructor variables should be provided in SI units
+    """
+
     attrs = {
         "m": "mass",
         "a_drag": "drag_area",
-        "a_srp": "area_SRP",
         "CD": "CD"
     }
 
-    def __init__(self, name,**kwargs):
+    def __init__(self, name,CD,mass,area,**kwargs):
         """
-        Generic class for the description of physical characteristics of propagated satellite
+        Generic class for the description of physical characteristics of satellite
         name of satellite [str]
         Drag_Area [m^2]
         Mass [kg]
         """
 
         self.name = name
+        self.CD = CD
+        self.mass = mass
+        self.area = area
 
         for k, v in kwargs.items():
             setattr(self, self.__class__.attrs[k], v)
@@ -40,10 +39,10 @@ class SatelliteSpecs():
             raise AttributeError(name)
 
     @property
-    def drag_area (self):
-        return self._drag_area
-    
-    @drag_area.setter
-    def drag_area(self,value):
-        self._drag_area = value / (1000**2)
+    def area (self):
+        return self._area
+
+    @area.setter
+    def area(self,value):
+        self._area = value / (1000**2)
         """value is stored in [km^2] """

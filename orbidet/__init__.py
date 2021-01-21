@@ -25,17 +25,19 @@ import beyond.beyond.constants
 del beyond.beyond.constants.Body.mu #set mu as input constant rather than a computed variable
 beyond.beyond.constants.Earth = beyond.beyond.constants.Body(
     name="Earth",
+    mu = 3.986004415e5,  # [km^3 / s^2]
     mass=5.97237e24,
-    equatorial_radius=2.3,
-    flattening=1 / 298.257223563,
-    J2=1.08262668355315130e-3,
-    J3=-2.532243534e-6,
+    equatorial_radius=6378.137, # [km]
+    polar_radius = 6356.7523    ,#[km]
+    flattening= 1 / 298.257222101,
+    J2=0.108262693e-2,
+    J3 = -0.253230782e-5,
     J4 = -0.162042999e-5,
     J5 = -0.227071104e-6,
     J6 = 0.540843616e-6,
-    mu = 3.986004415e5,
     rot_vector = [0,0,7.292115e-5], #angular velocity vector
 )
+
 
 
 from beyond.beyond.frames.iau1980 import _tab
