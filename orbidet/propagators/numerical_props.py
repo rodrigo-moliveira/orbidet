@@ -7,6 +7,8 @@ from beyond.beyond.dates import timedelta
 from beyond.beyond.orbits import Orbit,Ephem
 
 from orbidet.force import Force
+from .utils import cartesian_osculating_state_fct as state_fct
+
 
 class ImportedProp(NumericalPropagator):
     """Wrapper of propagator imported from a previosly generated computation.
@@ -169,15 +171,14 @@ class Cowell(NumericalPropagator):
         date_out = orb.date + step
 
         #run solver
-        solver = solve_ivp(self._fun, (date_in.mjd*86400,date_out.mjd*86400), orb, method=self.method,
+        solver = solve_ivp(state_fct, (date_in.mjd*86400,date_out.mjd*86400), orb, method=self.method,
                            t_eval=[date_out.mjd*86400],rtol = self.tol, atol = self.tol/1e3,
-                           args = (self.force_model,))
+                           args = (self.force,))
         x = solver.y.flatten()
-        return Orbit(date_out,x,"cartesian",self.frame,None)
+        return Orbit(x,date_out,"cartesian",self.frame,self)
 
 
     def _iter(self, **kwargs):
-        print("ola");exit()
         dates = kwargs.get("dates")
 
         if dates is not None:
@@ -193,26 +194,9 @@ class Cowell(NumericalPropagator):
 
         orb = self.orbit
         yield orb
-        # In order to compute the propagation with the reference step size
-        # (ie self.step), but give the result at the requested step size
-        # (ie step), we use an Ephem object for interpolation
-        # ephem = [orb]
 
         date = start
         while date < stop:
             orb = self._make_step(orb, step)
             date += step
             yield orb
-            # ephem.append(orb)
-            # date += real_step
-
-
-        # ephem = Ephem(ephem)
-        #
-        # if kwargs.get("real_steps", False):
-        #     ephem_iter = ephem.iter(dates=dates, listeners=listeners)
-        # else:
-        #     ephem_iter = ephem.iter(dates=dates, step=step, listeners=listeners)
-        #
-        # for orb in ephem_iter:
-        #     yield orb

@@ -6,7 +6,7 @@ from beyond.beyond.dates import Date, timedelta
 from beyond.beyond.orbits import Orbit
 
 from orbidet.propagators import ImportedProp, Cowell
-from orbidet.force import Force,TwoBody,AtmosphericDrag,GravityAcceleration
+from orbidet.force import Force,TwoBody,AtmosphericDrag,GravityAcceleration,ExponentialDragDb
 from orbidet.satellite import SatelliteSpecs
 
 def ImportedPropExample():
@@ -44,14 +44,15 @@ def CowellExample():
                         2)      #area [m²]
 
     # creating force model
-    force = Force()
-    grav = GravityAcceleration(10,10)
-    drag = AtmosphericDrag(sat)
+    force = Force(integrationFrame = integrationFrame, gravityFrame = gravityFrame)
+    grav = GravityAcceleration(5,5)
+    DragHandler = ExponentialDragDb()
+    drag = AtmosphericDrag(sat,DragHandler)
     two_body = TwoBody()
-    # force.addForce(grav)
-    # force.addForce(drag)
+    force.addForce(grav)
+    force.addForce(drag)
     force.addForce(two_body)
-    print(force)
+    # print(force)
 
     # creating propagator & generator
     prop = Cowell(step,force,method="RK45",frame=initialOrbit.frame)
@@ -60,7 +61,7 @@ def CowellExample():
 
     # generate orbit
     for orbit in gen:
-        print(orbit.date)#, orbit)
+        print(orbit.date,orbit[0],orbit[1],orbit[2])#, orbit)
 
 
 

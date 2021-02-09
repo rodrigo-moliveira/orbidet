@@ -7,6 +7,7 @@ from .acceleration import Acceleration
 from beyond.beyond.constants import Earth
 from orbidet.errors import MissingDbValue,ConfigError
 
+rot_vector = Earth.rot_vector
 
 class ExponentialDragDb:
     """Implementation of Exponential Atmospheric Drag database, cf. implemented in Vallado
@@ -98,11 +99,12 @@ class ExponentialDragDb:
 
 class AtmosphericDrag(Acceleration):
 
-    def __init__(self,sat):
+    def __init__(self,sat,DensityHandler):
         super().__init__("Atmospheric Drag")
         self.sat = sat
+        self.DensityHandler = DensityHandler
 
-    def acceleration(self, DensityHandler, r, v, rot_vector):
+    def acceleration(self, X):
         """
         computes drag acceleration
         DensityHandler - Density Handler (I only implemented an Exponential Model)
@@ -110,7 +112,8 @@ class AtmosphericDrag(Acceleration):
         sat - Satellite instance
         rot_vector - rotational speed vector to convert between ECI and ECEF (omega vector)
         """
-        rho = DensityHandler.get_rho(np.linalg.norm(r))
+        r,v = X[0:3],X[3:]
+        rho = self.DensityHandler.get_rho(np.linalg.norm(r))
 
         v_r = v - np.cross(rot_vector,r)
         v_abs = np.linalg.norm(v_r)

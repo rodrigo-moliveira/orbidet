@@ -19,9 +19,9 @@ class TwoBody(Acceleration):
     def __init__(self):
         super().__init__("Two Body")
 
-    def acceleration(self,r):
-        R = np.linalg.norm(r)
-        a = -mu * r / (R**3)
+    def acceleration(self,X):
+        R = np.linalg.norm(X[0:3])
+        a = -mu * X[0:3] / (R**3)
         return a
 
 
@@ -32,7 +32,7 @@ class LowZonalHarmonics(Acceleration):
         super().__init__("Gravity zonal harmonics")
         self.degree = degree
 
-    def acceleration(self,r):
+    def acceleration(self,X):
         """
         compute acceleration due to zonal harmonics.
         The harmonics coded are the low-order ones (the equations are hard-coded) and
@@ -41,6 +41,7 @@ class LowZonalHarmonics(Acceleration):
         r - np.linalg.norm(R)
         n - order of the zonal harmonic. from n=2 (J2) to n=6(J2,J3,J4,J5,J6)
         """
+        r = X[0:3]
         R = np.linalg.norm(r)
         x,y,z = r
         ax=ay=az=0
@@ -158,7 +159,7 @@ class GravityAcceleration(Acceleration):
         return _P
 
 
-    def acceleration(self,R,n_start=2,m_start=0):
+    def acceleration(self,X,n_start=2,m_start=0):
         """
         computes the gravitational startint at n_start and m_start
         R is the position vector in the evaluation frame (should be ECEF)
@@ -166,6 +167,7 @@ class GravityAcceleration(Acceleration):
         n_start -> initial n value to start the summation (default is 2: excludes the central force term
                 (1st order terms all vanish))
         """
+        R = X[0:3]
         r = np.linalg.norm(R)
 
         # get spherical coordinates
