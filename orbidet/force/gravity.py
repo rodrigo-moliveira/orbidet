@@ -16,6 +16,9 @@ class TwoBody(Acceleration):
     """
     Simple two-body acceleration
     """
+    def __init__(self):
+        super().__init__("Two Body")
+
     def acceleration(self,r):
         R = np.linalg.norm(r)
         a = -mu * r / (R**3)
@@ -26,6 +29,7 @@ class LowZonalHarmonics(Acceleration):
     """Hardcoded low degree zonal harmonics
     """
     def __init__(self,degree):
+        super().__init__("Gravity zonal harmonics")
         self.degree = degree
 
     def acceleration(self,r):
@@ -89,6 +93,8 @@ class GravityAcceleration(Acceleration):
     DEFAULT_PATH = Path("orbidet/data/EGM96.txt")
 
     def __init__(self,Degree,Order,FileToPotentialModel=DEFAULT_PATH):
+        super().__init__("Gravity Harmonics")
+
         if Degree < 0 or Order < 0 or Order > Degree:
             raise GravityError("Error setting the Gravity Acceleration. Degree and Order must be > 0 and "
             "Degree >= Order")

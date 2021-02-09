@@ -98,7 +98,11 @@ class ExponentialDragDb:
 
 class AtmosphericDrag(Acceleration):
 
-    def acceleration(self, DensityHandler, r, v, sat, rot_vector):
+    def __init__(self,sat):
+        super().__init__("Atmospheric Drag")
+        self.sat = sat
+
+    def acceleration(self, DensityHandler, r, v, rot_vector):
         """
         computes drag acceleration
         DensityHandler - Density Handler (I only implemented an Exponential Model)
@@ -110,6 +114,6 @@ class AtmosphericDrag(Acceleration):
 
         v_r = v - np.cross(rot_vector,r)
         v_abs = np.linalg.norm(v_r)
-        a = -1/2 * rho * sat.CD * sat.area / sat.m * v_abs * v_r
+        a = -1/2 * rho * self.sat.CD * self.sat.area / self.sat.m * v_abs * v_r
 
         return a

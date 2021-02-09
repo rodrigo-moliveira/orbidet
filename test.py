@@ -6,6 +6,7 @@ from beyond.beyond.constants import Earth
 from orbidet.force.drag import AtmosphericDrag,ExponentialDragDb
 from orbidet.force.gravity import TwoBody,LowZonalHarmonics,GravityAcceleration
 from orbidet.satellite import SatelliteSpecs
+from orbidet.force import Force
 
 # for i in range (30):
 #     start = Date(2010,3,i+1,18,00,0)
@@ -14,10 +15,18 @@ from orbidet.satellite import SatelliteSpecs
 #     mean.frame = "TOD"
 
 
+
 # print(repr(mean))
 grav = GravityAcceleration(10,10)
 a=grav.acceleration(np.array([6542.76,2381.36,-0.000102]))
+drag = AtmosphericDrag()
 
+
+force_model = Force()
+force_model.addForce(grav)
+force_model.addForce(drag)
+print(force_model)
+# print(a)
 
 # sat = SatelliteSpecs("SAT1",2,10,20)
 # DragHandler = ExponentialDragDb()
