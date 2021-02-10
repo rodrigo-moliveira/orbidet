@@ -22,6 +22,6 @@ class Force():
         for force in self._force:
             str += force.name + ", "
         return str[0:-2]
-        
+
     def getForceList(self):
         return self._force

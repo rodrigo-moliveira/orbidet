@@ -8,6 +8,7 @@ from orbidet.force.drag import AtmosphericDrag,ExponentialDragDb
 from orbidet.force.gravity import TwoBody,LowZonalHarmonics,GravityAcceleration
 from orbidet.satellite import SatelliteSpecs
 from orbidet.force import Force
+from orbidet.propagators.mean_osc_maps import SemianalyticalMeanOscMap
 
 # for i in range (30):
 #     start = Date(2010,3,i+1,18,00,0)
@@ -17,9 +18,27 @@ from orbidet.force import Force
 
 start = Date(2010,3,1,18,00,0)
 X = np.array([6542.76,2381.36,-0.000102,0.3928,-1.0793,7.592])
-orbit = Orbit(X,start, "cartesian","EME2000",None)
-# print(orbit)
-orbit.frame="PEF"
+orbit = Orbit(X,start, "cartesian","TOD",None)
+sat = SatelliteSpecs("SAT1", #name
+                    2,       #CD
+                    50,      #mass [kg]
+                    2)      #area [m²]
+
+# creating force model
+force = Force(integrationFrame = "TOD", gravityFrame = "PEF")
+grav = GravityAcceleration(5,0)
+DragHandler = ExponentialDragDb()
+drag = AtmosphericDrag(sat,DragHandler)
+two_body = TwoBody()
+force.addForce(grav)
+force.addForce(drag)
+force.addForce(two_body)
+
+transf = SemianalyticalMeanOscMap(force)
+transf.mean_to_osc(orbit)
+
+
+exit()
 
 
 T = EME2000.convert_to(start,TOD)

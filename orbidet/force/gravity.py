@@ -94,7 +94,7 @@ class GravityAcceleration(Acceleration):
     DEFAULT_PATH = Path("orbidet/data/EGM96.txt")
 
     def __init__(self,Degree,Order,FileToPotentialModel=DEFAULT_PATH):
-        super().__init__("Gravity Harmonics")
+        super().__init__("Gravity Harmonics (" + str(Degree) + " x " + str(Order)+")")
 
         if Degree < 0 or Order < 0 or Order > Degree:
             raise GravityError("Error setting the Gravity Acceleration. Degree and Order must be > 0 and "
@@ -167,7 +167,7 @@ class GravityAcceleration(Acceleration):
         n_start -> initial n value to start the summation (default is 2: excludes the central force term
                 (1st order terms all vanish))
         """
-        R = X[0:3]
+        R = X[0:3] if len(X) > 3 else X
         r = np.linalg.norm(R)
 
         # get spherical coordinates

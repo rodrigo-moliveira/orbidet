@@ -1,29 +1,26 @@
-import csv
-import warnings
 from scipy.integrate import solve_ivp
 import numpy as np
-from scipy.interpolate import CubicHermiteSpline,lagrange,interp1d,CubicSpline
+from scipy.interpolate import CubicHermiteSpline,CubicSpline
 
-from beyond.propagators.base import NumericalPropagator
-from beyond.dates import timedelta
-from beyond.orbits.ephem import Ephem
-from  beyond.orbits import Orbit,Ephem
-from beyond.frames.iau1980 import _sideral
+from beyond.beyond.propagators.base import NumericalPropagator
+from beyond.beyond.orbits import Orbit
 
-from .force_model import Force
-from orbidet.utils.diff_eqs import equinoctial_state_fct,_PEF_to_ITRF,_J2000_to_TOD
-from .short_period_transf import NumAv_MEP_transf
-from orbidet.cython_modules.semi_analytical import equinoctial_state_fct as cy_equinoctial_state_fct
+from orbidet.force import Force
+from .mean_osc_maps import SemianalyticalMeanOscMap
 
-from beyond.constants import Earth as EARTH
-mu = EARTH.mu
+from beyond.beyond.constants import Earth
+mu = Earth.mu
 
 
-class SemiAnalytical(NumericalPropagator):
-    """Semianalytical propagator with configurable force model through a *Force* instance.
-    orbit.state:
-        *"osculating"
-        *"mean"
+from .utils import equinoctial_mean_state_fct as state_fct
+
+
+class Semianalytical(NumericalPropagator):
+    """Semianalytical propagator with configurable force model through a *Force* instance,
+    following the propagation theory proposed by Todd Ely (https://www.researchgate.net/profile/Todd_Ely)
+        - Numerical mean element propagation using numerical quadrature
+        - Mean-to-osculating map using DFTs
+    first-order theory implementing non-resonant zonal/tesseral harmonics and drag
     """
 
     # integration methods (for scipy.solve_ivp). See Scipy documentation
@@ -31,9 +28,9 @@ class SemiAnalytical(NumericalPropagator):
     RK45 = 'RK45'
     DOP853 = 'DOP853'
 
-    FRAME = "EME2000"
+    FRAME = "TOD"
 
-    def __init__(self, step, force_model : Force, *, method=RK45, frame=FRAME, tol=1e-4,quadrature_order = 30,
+    def __init__(self, step, force, *, method=RK45, frame=FRAME, tol=1e-4,quadrature_order = 30,
                  DFT_lmb_len = 64, DFT_sideral_len=32,outputs=("mean","osculating")):
         """
         Args:
@@ -42,164 +39,25 @@ class SemiAnalytical(NumericalPropagator):
             method (str): Integration method (see class attributes)
             frame (str): Frame to use for the propagation
             tol (float): Error tolerance for adaptive stepsize methods
+            quadrature_order (int) : order of the numverical quadrature
+            DFT_lmb_len (int) : length of the DFT associated with the lambda variable (zonals and drag forces)
+            DFT_sideral_len (int) : lenght of the DFT associated with the theta variable (non-resonant tesserals)
             outputs (tupe): Type of orbit to output ("mean" and/or "osculating")
         """
         self.step = step
-        self.force_model = force_model
+        assert isinstance(force, Force), "Force model should be of type Orbidet.force.force.Force"
+        self.force = force
         self.method = method
         self.frame = frame
         self.tol = tol
-        self.state_transformer = NumAv_MEP_transf(force_model,DFT_lmb_len,DFT_sideral_len)
+        self.state_transformer = SemianalyticalMeanOscMap(force_model,DFT_lmb_len,DFT_sideral_len)
         self.quadrature_order = quadrature_order
-        if force_model.CYTHON:
-            self._fun = cy_equinoctial_state_fct
-        else:
-            self._fun = equinoctial_state_fct
-
-        drag = force_model.DRAG
-        if drag:
-            self.zonals_drag = ("zonals","drag")
-        else:
-            self.zonals_drag = ("zonals",)
-
-        if "mean" in outputs and "osculating" in outputs:
-            self.outputs = "both"
-        elif "mean" in outputs:
-            self.outputs = "mean"
-        elif "osculating" in outputs:
-            self.outputs = "osculating"
-        else:
-            raise Exception("outputs should either be 'mean' and / or 'osculating'")
-
-    def copy(self):
-        return self.__class__(
-            self.step, self.force_model, method=self.method, frame=self.frame,tol=self.tol
-        )
-
-    @property
-    def orbit(self):
-        return self._orbit if hasattr(self, "_orbit") else None
-
-    @orbit.setter
-    def orbit(self, orbit):
-        orb = orbit.copy(form = "equinoctial")
-        self.frame = orbit.frame
-
-        if not hasattr(orbit, "state"):
-            raise Exception("An additional user defined attribute *state* should be created to ",
-                            "set up the semi analytical propagator. either state=\"mean\" or \"osculating\"")
-        elif orbit.state == "mean":
-            pass
-        elif orbit.state == "osculating":
-            orb = self.state_transformer.osc_to_mean(orb)
-        else:
-            raise Exception("'state' should either be 'mean' or 'osculating'")
-        self._orbit = orb.copy(form="equinoctial", frame=self.frame)
-
-
-    def _make_step(self, orb, step):
-        """
-        Compute the next step with scipy.solve_ivp and selected method (RK45 or DOP853)
-        """
-        #defining datetime objects of beginning and end
-        date_in = orb.date
-        date_out = orb.date + step
-
-        # initial conditions setup
-        y0 = np.array(orb)
-
-        #run solver
-        solver = solve_ivp(self._fun, (date_in.mjd*86400,date_out.mjd*86400), y0, method=self.method,
-                           t_eval=[date_out.mjd*86400],rtol = self.tol, atol = self.tol/1e3,
-                           args = (self.force_model,self.zonals_drag,self.quadrature_order))
-
-        x = solver.y.flatten()
-        x[5] = x[5] % (2*np.pi)
-
-        return Orbit(date_out,x,"equinoctial",self.frame,None)
-
-
-    def _iter(self, **kwargs):
-
-        dates = kwargs.get("dates")
-
-        if dates is not None:
-            start = dates.start
-            stop = dates.stop
-            step = None
-        else:
-            start = kwargs.get("start", self.orbit.date)
-            stop = kwargs.get("stop")
-            step = kwargs.get("step")
-
-        listeners = kwargs.get("listeners", [])
-
-        orb_mean = self.orbit
-        if self.outputs is "mean":
-            yield orb_mean
-        else:
-            orb_osc = self.state_transformer.mean_to_osc(orb_mean.copy(form="equinoctial"))
-            if self.outputs is "both":
-                yield orb_mean,orb_osc
-            else:
-                yield orb_osc
-
-
-        date = start
-        while date < stop:
-            orb_mean = self._make_step(orb_mean, step)
-            date += step
-            if self.outputs is "mean":
-                yield orb_mean
-            else:
-                orb_osc = self.state_transformer.mean_to_osc(orb_mean.copy(form="equinoctial"))
-                if self.outputs is "both":
-                    yield orb_mean,orb_osc
-                else:
-                    yield orb_osc
-
-
-
-
-class Num_AvMEP(NumericalPropagator):
-    """Semianalytical propagator with configurable force model through a *Force* instance.
-    orbit.state:
-        *"osculating"
-        *"mean"
-    """
-
-    # integration methods (for scipy.solve_ivp). See Scipy documentation
-    # url: https://docs.scipy.org/doc/scipy/reference/generated/scipy.integrate.solve_ivp.html
-    RK45 = 'RK45'
-    DOP853 = 'DOP853'
-
-    FRAME = "EME2000"
-
-    def __init__(self, step, force_model : Force, *, method=RK45, frame=FRAME, tol=1e-4,quadrature_order = 30,
-                 DFT_lmb_len = 64, DFT_sideral_len=32,outputs=("mean","osculating")):
-        """
-        Args:
-            step (datetime.timedelta): Step size of the propagator
-            force_model (Force):
-            method (str): Integration method (see class attributes)
-            frame (str): Frame to use for the propagation
-            tol (float): Error tolerance for adaptive stepsize methods
-            outputs (tupe): Type of orbit to output ("mean" and/or "osculating")
-        """
-        self.step = step
-        self.force_model = force_model
-        self.method = method
-        self.frame = frame
-        self.tol = tol
-        self.state_transformer = NumAv_MEP_transf(force_model,DFT_lmb_len,DFT_sideral_len)
-        self.quadrature_order = quadrature_order
-        self._fun = force_model.equinoctial_state_fct
-
-        drag = force_model.DRAG
-        if drag:
-            self.zonals_drag = ("zonals","drag")
-        else:
-            self.zonals_drag = ("zonals",)
+        exit()
+        # drag = force_model.DRAG
+        # if drag:
+        #     self.zonals_drag = ("zonals","drag")
+        # else:
+        #     self.zonals_drag = ("zonals",)
 
         if "mean" in outputs and "osculating" in outputs:
             self.outputs = "both"
