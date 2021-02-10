@@ -31,6 +31,7 @@ class LowZonalHarmonics(Acceleration):
     def __init__(self,degree):
         super().__init__("Gravity zonal harmonics")
         self.degree = degree
+        self.order = 0
 
     def acceleration(self,X):
         """

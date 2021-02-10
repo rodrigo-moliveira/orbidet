@@ -50,14 +50,8 @@ class Semianalytical(NumericalPropagator):
         self.method = method
         self.frame = frame
         self.tol = tol
-        self.state_transformer = SemianalyticalMeanOscMap(force_model,DFT_lmb_len,DFT_sideral_len)
+        self.state_transformer = SemianalyticalMeanOscMap(force,DFT_lmb_len,DFT_sideral_len)
         self.quadrature_order = quadrature_order
-        exit()
-        # drag = force_model.DRAG
-        # if drag:
-        #     self.zonals_drag = ("zonals","drag")
-        # else:
-        #     self.zonals_drag = ("zonals",)
 
         if "mean" in outputs and "osculating" in outputs:
             self.outputs = "both"
@@ -70,7 +64,7 @@ class Semianalytical(NumericalPropagator):
 
     def copy(self):
         return self.__class__(
-            self.step, self.force_model, method=self.method, frame=self.frame,tol=self.tol
+            self.step, self.force, method=self.method, frame=self.frame,tol=self.tol
         )
 
     @property
@@ -79,7 +73,7 @@ class Semianalytical(NumericalPropagator):
 
     @orbit.setter
     def orbit(self, orbit):
-        orb = orbit.copy(form = "equinoctial")
+        orb = orbit.copy(form = "equinoctial_mean")
         self.frame = orbit.frame
 
         if not hasattr(orbit, "state"):
@@ -91,7 +85,7 @@ class Semianalytical(NumericalPropagator):
             orb = self.state_transformer.osc_to_mean(orb)
         else:
             raise Exception("'state' should either be 'mean' or 'osculating'")
-        self._orbit = orb.copy(form="equinoctial", frame=self.frame)
+        self._orbit = orb.copy(form="equinoctial_mean", frame=self.frame)
 
 
 
@@ -99,15 +93,15 @@ class Semianalytical(NumericalPropagator):
         # mean state interpolator
         t = [start,start+self.step,start+2*self.step,start+3*step]
         _t = [t.mjd*86400 for t in t]
-        solver = solve_ivp(self._fun, (_t[0],_t[-1]), np.array(orb), method=self.method,
+        solver = solve_ivp(state_fct, (_t[0],_t[-1]), np.array(orb), method=self.method,
                            t_eval=_t,rtol = self.tol, atol = self.tol/1e3,
-                           args = (self.force_model,self.zonals_drag,self.quadrature_order))
+                           args = (self.force,self.quadrature_order))
         _x = solver.y;y0 = _x[:,0];y1 = _x[:,1];y2 = _x[:,2];y3 = _x[:,3]
 
-        y0_dot = self._fun(t[0],y0,self.force_model,self.zonals_drag,self.quadrature_order)
-        y1_dot = self._fun(t[1],y1,self.force_model,self.zonals_drag,self.quadrature_order)
-        y2_dot = self._fun(t[2],y2,self.force_model,self.zonals_drag,self.quadrature_order)
-        y3_dot = self._fun(t[3],y3,self.force_model,self.zonals_drag,self.quadrature_order)
+        y0_dot = state_fct(t[0],y0,self.force,self.quadrature_order)
+        y1_dot = state_fct(t[1],y1,self.force,self.quadrature_order)
+        y2_dot = state_fct(t[2],y2,self.force,self.quadrature_order)
+        y3_dot = state_fct(t[3],y3,self.force,self.quadrature_order)
         self._interpolator_data = [[t[0],y0,y0_dot],[t[1],y1,y1_dot],[t[2],y2,y2_dot],[t[3],y3,y3_dot]]
         return CubicHermiteSpline(_t[0:3],[y0,y1,y2],[y0_dot,y1_dot,y2_dot],extrapolate = False)
 
@@ -120,11 +114,11 @@ class Semianalytical(NumericalPropagator):
         t_new = t + step
         y = self._interpolator_data[-1][1]
 
-        solver = solve_ivp(self._fun, (t.mjd*86400,t_new.mjd*86400), y, method=self.method,
+        solver = solve_ivp(state_fct, (t.mjd*86400,t_new.mjd*86400), y, method=self.method,
                            t_eval=[t_new.mjd*86400],rtol = self.tol, atol = self.tol/1e3,
-                           args = (self.force_model,self.zonals_drag,self.quadrature_order))
+                           args = (self.force,self.quadrature_order))
         y_new = solver.y.flatten()
-        y_dot = self._fun(t_new,y_new,self.force_model,self.zonals_drag,self.quadrature_order)
+        y_dot = state_fct(t_new,y_new,self.force,self.quadrature_order)
         self._interpolator_data.append([t_new,y_new,y_dot])
         aux = self._interpolator_data
 
@@ -139,7 +133,7 @@ class Semianalytical(NumericalPropagator):
         t = [x[0] for x in aux]
         _t = [ti.mjd*86400 for ti in t]
         y = [x[1] for x in aux]
-        orbs = [Orbit(ti,xi,"equinoctial",self.frame,None) for ti,xi in zip(t,y)]
+        orbs = [Orbit(xi,ti,"equinoctial_mean",self.frame,None) for ti,xi in zip(t,y)]
 
         Cy0 = self.state_transformer.getFourierCoefs(orbs[0],True)
         Cy1 = self.state_transformer.getFourierCoefs(orbs[1],True)
@@ -169,7 +163,7 @@ class Semianalytical(NumericalPropagator):
 
     def _update_SPG_interpolator(self):
         aux = self._interpolator_data
-        orb = Orbit(aux[-1][0],aux[-1][1],"equinoctial",self.frame,None)
+        orb = Orbit(aux[-1][1],aux[-1][0],"equinoctial_mean",self.frame,None)
         Cy = self.state_transformer.getFourierCoefs(orb,True)
         aux[-1].append(Cy)
         _t = [ti[0].mjd*86400 for ti in aux]
@@ -229,7 +223,7 @@ class Semianalytical(NumericalPropagator):
         if self.outputs is "mean":
             yield orb_mean
         else:
-            orb_osc = self.state_transformer.mean_to_osc(orb_mean.copy(form="equinoctial"))
+            orb_osc = self.state_transformer.mean_to_osc(orb_mean.copy(form="equinoctial_mean"))
             if self.outputs is "both":
                 yield orb_mean,orb_osc
             else:
@@ -244,7 +238,7 @@ class Semianalytical(NumericalPropagator):
             while date < new_integration_date:
                 # perform mean element interpolation and SPG step to get osculating results
                 x_mean = self.interpolatorAOG(date.mjd*86400)
-                orb_mean = Orbit(date,x_mean,"equinoctial",self.frame,None)
+                orb_mean = Orbit(x_mean,date,"equinoctial_mean",self.frame,None)
 
                 date = date + step
                 # output results

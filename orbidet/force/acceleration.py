@@ -2,7 +2,6 @@ class Acceleration():
 
     def __init__(self,name):
         self.name = name
-        print(name)
         # facilitate access to each acceleration type (not very elegant)
         if "Drag" in name:
             self.type = "drag"

@@ -22,17 +22,6 @@ class SemianalyticalMeanOscMap():
 
         self.force = force
 
-        # if force.Grav_complete:
-        #     self.tesserals = force.Grav_m >= 1
-        # else:
-        #     self.tesserals = False
-        # drag = force.DRAG
-        # if drag:
-        #     self.zonals_drag = ("zonals","drag")
-        # else:
-        #     self.zonals_drag = ("zonals",)
-
-
 
     def getFourierCoefs(self,orb,toFourierSeriesCoefs=False):
         """
@@ -46,9 +35,10 @@ class SemianalyticalMeanOscMap():
         if "single" in transform_dct:
             dctFourier["single"] = self._1D_FFT_transform(transform_dct["single"][0],transform_dct["single"][1],toFourierSeriesCoefs,
                                                           transform_dct["single"][2])
-        if "tesserals" in transform_dct:
-            dctFourier["tesserals"] = self._2D_FFT_transform(transform_dct["tesserals"][0],transform_dct["tesserals"][1],toFourierSeriesCoefs,
-                                                             transform_dct["tesserals"][2],transform_dct["tesserals"][3])
+        if "double" in transform_dct:
+            dctFourier["double"] = self._2D_FFT_transform(transform_dct["double"][0],transform_dct["double"][1],toFourierSeriesCoefs,
+                                                             transform_dct["double"][2],transform_dct["double"][3])
+
         return dctFourier
 
 
@@ -61,7 +51,7 @@ class SemianalyticalMeanOscMap():
         """
         tolerance=[1e-12,1e-16,1e-16,1e-16,1e-16,1e-16]
         f_etas = lambda x : self.getEtasFromFourierCoefs(self.getFourierCoefs(x,False),x,False)
-        orb.form = 'equinoctial'
+        orb.form = 'equinoctial_mean'
 
         mean_ = orb.copy()
         for i in range(MAX_ITER):
@@ -73,7 +63,7 @@ class SemianalyticalMeanOscMap():
 
 
     def mean_to_osc(self,orb,etas=None):
-        orb.form = 'equinoctial'
+        orb.form = 'equinoctial_mean'
         if etas is None:
             FourierCoefs = self.getFourierCoefs(orb,False)
             etas = self.getEtasFromFourierCoefs(FourierCoefs,orb,False)
@@ -86,36 +76,34 @@ class SemianalyticalMeanOscMap():
     def _1D_FFT_transform(self,f,orb_arr,toFourierSeriesCoefs,lmb):
         fs = np.array(list(map(f,orb_arr)))
         N = self.DFT_LEN
-        exit()
 
         # take the DFTs and shift to center them at the fundamental freq. (k=0)
         F = sfft.fft(fs.T,n=N)
-        F0 = F[0] ; F0 = sfft.fftshift(F0)
-        F1 = F[1] ; F1 = sfft.fftshift(F1)
-        F2 = F[2] ; F2 = sfft.fftshift(F2)
-        F3 = F[3] ; F3 = sfft.fftshift(F3)
-        F4 = F[4] ; F4 = sfft.fftshift(F4)
-        F5 = F[5] ; F5 = sfft.fftshift(F5)
+        F = sfft.fftshift(F,axes=1)
+
 
         if toFourierSeriesCoefs:
             # convert DFT to Fourier Coeffs.
             ind = -1
             for j in np.arange(-N/2,N/2):
                 ind += 1
-                F0[ind] = np.exp(-1j*j*lmb)*F0[ind] / N
-                F1[ind] = np.exp(-1j*j*lmb)*F1[ind] / N
-                F2[ind] = np.exp(-1j*j*lmb)*F2[ind] / N
-                F3[ind] = np.exp(-1j*j*lmb)*F3[ind] / N
-                F4[ind] = np.exp(-1j*j*lmb)*F4[ind] / N
-                F5[ind] = np.exp(-1j*j*lmb)*F5[ind] / N
-        return [F0,F1,F2,F3,F4,F5]
+                F[0][ind] = np.exp(-1j*j*lmb)*F[0][ind] / N
+                F[1][ind] = np.exp(-1j*j*lmb)*F[1][ind] / N
+                F[2][ind] = np.exp(-1j*j*lmb)*F[2][ind] / N
+                F[3][ind] = np.exp(-1j*j*lmb)*F[3][ind] / N
+                F[4][ind] = np.exp(-1j*j*lmb)*F[4][ind] / N
+                F[5][ind] = np.exp(-1j*j*lmb)*F[5][ind] / N
+
+        return F
 
     def _2D_FFT_transform(self,f,orb_arr,toFourierSeriesCoefs,lmb,theta):
         fs = np.array([list(map(f,x)) for x in orb_arr])
+
         N = self.DFT_LEN
         M = self.SIDEREAL_LEN
 
-        F = sfft.fft2(fs.T)
+        F = sfft.fft2(fs.T,axes=2)
+        # print(F.shape);exit()
         F0 = F[0].T ; F0 = sfft.fftshift(F0)
         F1 = F[1].T ; F1 = sfft.fftshift(F1)
         F2 = F[2].T ; F2 = sfft.fftshift(F2)
@@ -146,7 +134,7 @@ class SemianalyticalMeanOscMap():
         # initial setup
         dct = {}
         N = self.DFT_LEN
-        orb.form = 'equinoctial'
+        orb.form = 'equinoctial_mean'
         a,h,k,p,q,lmb = orb
         n = np.sqrt(mu / a**3)
 
@@ -163,30 +151,26 @@ class SemianalyticalMeanOscMap():
         dct["single"] = [f,orb_arr,lmb]
 
 
-        # rotation_matrix = _framedct[self.force.integrationFrame].convert_to(orb.date,self.force.gravityFrame)[0:3,0:3]
-        # # Double averaging operator (tesserals)
-        # if self.tesserals:
-        #     M = self.SIDEREAL_LEN
-        #     theta = np.deg2rad(_sideral(orb.date,model="apparent", eop_correction=False))
-        #     orb._theta = theta
-        #     theta_arr = np.arange(0,2*np.pi,2*np.pi/M) + [theta]*M
-        #
-        #     orb_arr = []
-        #     for lmb_k in lmb_arr:
-        #         aux = []
-        #         for theta_k in theta_arr:
-        #             orbit = orb.copy() + np.array([0,0,0,0,0,lmb_k])
-        #             orbit.sideral = theta_k
-        #             aux.append(orbit)
-        #         orb_arr.append(aux)
-        #
-        #     if not self._force.TOD_PEF_rot:
-        #         R_PEF_to_ITRF = _PEF_to_ITRF(orb.date)
-        #         R_J2000_to_TOD = _J2000_to_TOD(orb.date)
-        #         f = lambda x: self.VOP_sys_equinoctial(x, R_PEF_to_ITRF @ _TOD_to_PEF(x.sideral % (2*np.pi)) @ R_J2000_to_TOD,("tesserals",))
-        #     else:
-        #         f = lambda x: self.VOP_sys_equinoctial(x, _TOD_to_PEF(x.sideral % (2*np.pi)) ,("tesserals",))
-        #     dct["tesserals"] = [f,orb_arr,lmb,theta]
+        # Double averaging operator (tesserals)
+        if self.force.tesserals:
+            rotation_matrix = _framedct[self.force.integrationFrame].convert_to(orb.date,self.force.gravityFrame)[0:3,0:3]
+            M = self.SIDEREAL_LEN
+            theta = np.deg2rad(sideral(orb.date,model="apparent", eop_correction=False))
+            orb._theta = theta
+            theta_arr = np.arange(0,2*np.pi,2*np.pi/M) + [theta]*M
+
+            orb_arr = []
+            for lmb_k in lmb_arr:
+                aux = []
+                for theta_k in theta_arr:
+                    orbit = orb.copy() + np.array([0,0,0,0,0,lmb_k])
+                    orbit.sideral = theta_k
+                    aux.append(orbit)
+                orb_arr.append(aux)
+
+            f = lambda x: self.VOP_partials(x, rotation_matrix,"double")
+            dct["double"] = [f,orb_arr,lmb,theta]
+
         return dct
 
 
@@ -198,8 +182,8 @@ class SemianalyticalMeanOscMap():
         M = self.SIDEREAL_LEN
         etas = np.zeros(6)
 
-        if "zonals" in dctFouriers:
-            aux = dctFouriers["zonals"]
+        if "single" in dctFouriers:
+            aux = dctFouriers["single"]
             F0 = aux[0] ; F1 = aux[1] ; F2 = aux[2]
             F3 = aux[3] ; F4 = aux[4] ; F5 = aux[5]
             a0_sum = a1_sum = a2_sum = a3_sum = a4_sum = a5_sum = 0
@@ -225,21 +209,21 @@ class SemianalyticalMeanOscMap():
             etas += np.apply_along_axis(np.real,0,
                                           [a0_sum*cte,a1_sum*cte,a2_sum*cte,a3_sum*cte,a4_sum*cte,a5_sum*cte])
 
-        if "tesserals" in dctFouriers:
-            aux = dctFouriers["tesserals"]
+        if "double" in dctFouriers:
+            aux = dctFouriers["double"]
             F0 = aux[0] ; F1 = aux[1] ; F2 = aux[2]
             F3 = aux[3] ; F4 = aux[4] ; F5 = aux[5]
             a0_sum = a1_sum = a2_sum = a3_sum = a4_sum = a5_sum = 0
             ind_N = -1
             if FourierSeriesCoefs:
                 theta = orb._theta if hasattr(orb,'_theta') else np.deg2rad(
-                    _sideral(orb.date,model="apparent", eop_correction=False))
+                    sideral(orb.date,model="apparent", eop_correction=False))
 
             for i in np.arange(-N/2,N/2):
                 ind_N += 1
                 ind_M = -1
-                if i == 0:
-                    continue
+                # if i == 0:
+                #     continue
                 for k in np.arange(-M/2,M/2):
                     ind_M += 1
                     if k == 0:
@@ -261,6 +245,7 @@ class SemianalyticalMeanOscMap():
             cte = 1/N/M
             etas += np.apply_along_axis(np.real,0,
                                           [a0_sum*cte,a1_sum*cte,a2_sum*cte,a3_sum*cte,a4_sum*cte,a5_sum*cte])
+
         return etas
 
 

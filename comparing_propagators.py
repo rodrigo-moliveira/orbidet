@@ -1,4 +1,4 @@
-"""File demonstrating the use of propagators (examples)
+"""In this file the Cowell and Semianalytical propagators are compared (in terms of outputs)
 """
 import numpy as np
 
@@ -18,64 +18,8 @@ forms = {'cartesian':['x','y','z','vx','vy','vz'],
          }
 
 
-def ImportedPropExample():
-    # defining initial conditions and setting propagator
-    start = Date(2010,3,1,18,00,0)
-    filename = "./orbidet/data/trajectories/GMAT1.csv"
-    prop = ImportedProp(start, filename=filename)
-    initialState = prop.orbit
-    # print(repr(initialState))
 
-    # getting generator
-    step = timedelta(seconds = 5)
-    stop = start + timedelta(hours = 1)
-    gen = prop.iter(step=step,stop=stop,start=start)
-
-    # generate orbit
-    for orbit in gen:
-        print(orbit.date, orbit)
-
-
-def CowellExample():
-    # defining initial conditions & frames
-    start = Date(2010,3,1,18,00,0)
-    step = timedelta(seconds = 5)
-    stop = start + timedelta(hours = 1)
-    integrationFrame = "TOD"
-    gravityFrame = "PEF"
-    initialOrbit = Orbit(np.array([6542.76,2381.36,-0.000102,0.3928,-1.0793,7.592]),
-                        start,"cartesian",integrationFrame,None)
-
-    # creating satellite
-    sat = SatelliteSpecs("SAT1", #name
-                        2,       #CD
-                        50,      #mass [kg]
-                        2)      #area [m²]
-
-    # creating force model
-    force = Force(integrationFrame = integrationFrame, gravityFrame = gravityFrame)
-    grav = GravityAcceleration(5,5)
-    DragHandler = ExponentialDragDb()
-    drag = AtmosphericDrag(sat,DragHandler)
-    two_body = TwoBody()
-    force.addForce(grav)
-    force.addForce(drag)
-    force.addForce(two_body)
-    # print(force)
-
-    # creating propagator & generator
-    prop = Cowell(step,force,method="RK45",frame=initialOrbit.frame)
-    initialOrbit.propagator = prop
-    gen = initialOrbit.iter(stop=stop,step=step)
-
-    # generate orbit
-    for orbit in gen:
-        print(orbit.date,orbit)
-
-
-
-
-def SemianalyticalExample():
+def main():
     # defining initial conditions & frames
     start = Date(2010,3,1,18,00,0)
     output_step = timedelta(seconds = 60)
@@ -94,7 +38,7 @@ def SemianalyticalExample():
 
     # creating force model
     force = Force(integrationFrame = integrationFrame, gravityFrame = gravityFrame)
-    grav = GravityAcceleration(5,5)
+    grav = GravityAcceleration(5,0)
     DragHandler = ExponentialDragDb()
     drag = AtmosphericDrag(sat,DragHandler)
     two_body = TwoBody()
@@ -103,34 +47,46 @@ def SemianalyticalExample():
     force.addForce(two_body)
     # print(force)
 
-    # creating propagator & generator
-    prop = Semianalytical(propagation_step,force,method="RK45",frame=initialOrbit.frame,
+    # creating Semianalytical propagator & generator
+    prop_semianalytical = Semianalytical(propagation_step,force,method="RK45",frame=initialOrbit.frame,
                         quadrature_order = 20, DFT_lmb_len = 32, DFT_sideral_len=32,
                         outputs=("mean","osculating"))
-    initialOrbit.propagator = prop
-    initialOrbit.state = "mean"
-    gen = initialOrbit.iter(stop=stop,step=output_step)
+    orbit_cow = initialOrbit.copy()
+    orbit_cow.propagator = prop_semianalytical
+    orbit_cow.state = "osculating"
+    gen_semianalytical = orbit_cow.iter(stop=stop,step=output_step)
 
 
-    ephm_osc = []
-    ephm_mean = []
+    # creating Cowell propagator & generator
+    prop = Cowell(output_step,force,method="DOP853",frame=initialOrbit.frame)
+    orbit_semi = initialOrbit.copy()
+    orbit_semi.propagator = prop
+    gen_cowell = orbit_semi.iter(stop=stop,step=output_step)
+
+
+    ephm_cow = []
+    ephm_semi_osc = []
+    ephm_semi_mean = []
     output_form = "equinoctial_mean"
     # generate orbit
-    for mean,osc in gen:
-        ephm_osc.append(osc.copy(form=output_form))
-        ephm_mean.append(mean.copy(form=output_form))
+    for (semi_mean,semi_osc),cow in zip(gen_semianalytical,gen_cowell):
 
-        print(mean.date)
+        ephm_semi_osc.append(semi_osc.copy(form=output_form))
+        ephm_semi_mean.append(semi_mean.copy(form=output_form))
+        ephm_cow.append(cow.copy(form=output_form))
+
+        print(cow.date)
 
 
     # Time array
-    dt = (ephm_osc[1].date - ephm_osc[0].date).total_seconds()
-    delta_t = (ephm_osc[-1].date - ephm_osc[0].date).total_seconds()
+    dt = (ephm_cow[1].date - ephm_cow[0].date).total_seconds()
+    delta_t = (ephm_cow[-1].date - ephm_cow[0].date).total_seconds()
     t = [t_i for t_i in range(0,round(delta_t+dt),round(dt))]
     xlabel = 'Time [s]'
 
 
-    for ephm,label in zip([ephm_osc,ephm_mean],["osc","mean"]):
+    for ephm,label in zip([ephm_semi_osc,ephm_semi_mean,ephm_cow],
+                ["Semianalytical osc","Semianalytical mean", "Cowell osc"]):
         x0 = [x[0] for x in ephm]
         x1 = [x[1] for x in ephm]
         x2 = [x[2] for x in ephm]
@@ -148,8 +104,15 @@ def SemianalyticalExample():
 
 
 
-def main():
-    SemianalyticalExample()
+
+
+
+
+
+
+
+
+
 
 if __name__ == "__main__":
     main()

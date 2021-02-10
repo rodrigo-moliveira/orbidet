@@ -25,3 +25,16 @@ class Force():
 
     def getForceList(self):
         return self._force
+
+
+    @property
+    def tesserals(self):
+        if not hasattr(self, "_tesserals"):
+            for force in self._force:
+                if "gravity" in force.type:
+                    self.tesserals = force.order >= 1
+        return self._tesserals
+
+    @tesserals.setter
+    def tesserals(self, val):
+        self._tesserals = val

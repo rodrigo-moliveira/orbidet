@@ -6,13 +6,15 @@ import numpy as np
 from scipy.integrate import fixed_quad
 
 from beyond.beyond.dates import Date
+from beyond.beyond.orbits import Orbit
 from beyond.beyond.frames.orient import TEME,PEF,TOD,MOD,EME2000,G50,ITRF,TIRF,CIRF,GCRF
 
 _framedct = {"TEME":TEME,"PEF":PEF,"TOD":TOD,"MOD":MOD,
             "EME2000":EME2000, "G50":G50,"ITRF":ITRF, "TIRF":TIRF,
             "CIRF":CIRF,"GCRF":GCRF}
 
-
+from beyond.beyond.constants import Earth
+mu = Earth.mu
 ################################################################################
 #Cowell propagator functions
 ################################################################################
@@ -59,10 +61,10 @@ def equinoctial_mean_state_fct(t,X,*args):
     """
     force = args[0]
     n = args[1]
-    print("corrigir state functions")
-    exit()
+    time = t if isinstance(t,Date) else Date(t/86400)
+    
     # reconstruct the orbit object
-    mean_orb = Orbit(Date(t/86400), X,"equinoctial",force.integrationFrame,None)
+    mean_orb = Orbit(X,time,"equinoctial_mean",force.integrationFrame,None)
     lmb = X[5]
 
     # quadratures (mean dynamics)
@@ -78,7 +80,7 @@ def equinoctial_mean_state_fct(t,X,*args):
                        _n + f_mean[5]])
 
 
-def wrapp_VOP_quad(x,orbit,force,_types):
+def wrapp_VOP_quad(x,orbit,force):
     """
     tesserals do not come into play (non-resonant case only)
     """
@@ -91,7 +93,7 @@ def wrapp_VOP_quad(x,orbit,force,_types):
         orb[5] = lmb_k
         orb_arr.append(orb)
 
-    Fs = np.array([np.array(VOP_partials(orb,force)) for orb in orb_arr])
+    Fs = np.array([np.array(VOP_partials(orb,force,np.eye(3),"single")) for orb in orb_arr])
     return Fs.T
 
 
@@ -114,7 +116,9 @@ def perturbing_osculating_state_fct(R,V,force,date,T,types):
 
 
     if "double" in types:
-        pass
+        for accel in force.getForceList():
+            if ("gravity" in accel.type):
+                a_pert += accel.acceleration(R,n_start=2,m_start=1)
 
     return T.T @ a_pert
 
@@ -125,13 +129,13 @@ def VOP_partials(orbit,force,T,types):
         orb - orbit in equinoctial form
         a_pert - perturbing acceleration in ECI cartesian form (without the 2-body dynamics)
     """
-    orb = orbit.copy(form = "equinoctial")
+    orb = orbit.copy(form = "equinoctial_mean")
     a,h,k,p,q,lmb = orb[0:6]
 
     orb.form = 'cartesian'
     r = np.array(orb[0:3]); v = np.array(orb[3:])
     a_pert = perturbing_osculating_state_fct(r,v,force,orb.date,T,types)
-    
+
     f = 1/(1+p**2+q**2)*np.array([1-p**2+q**2,2*p*q,-2*p])
     g = 1/(1+p**2+q**2)*np.array([2*p*q,1+p**2-q**2,2*q])
     w = 1/(1+p**2+q**2)*np.array([2*p,-2*q,1-p**2-q**2])

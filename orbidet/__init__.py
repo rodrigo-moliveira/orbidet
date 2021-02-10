@@ -2,6 +2,8 @@
 Initialization of the orbidet package.
 Orbidet is dependent on Beyond, which is initialized here
 """
+import numpy as np
+from numpy import cos, arccos, sin, arcsin, arctan2, sqrt, arctanh, sinh, cosh, tan
 
 # User configuration of Beyond Package
 from beyond.beyond.config import config
@@ -22,11 +24,11 @@ config.update({
 
 # change Earth constant
 import beyond.beyond.constants
-del beyond.beyond.constants.Body.mu #set mu as input constant rather than a computed variable
+beyond.beyond.constants.G = 6.6743015e-11* 10**-9
+# del beyond.beyond.constants.Body.mu #set mu as input constant rather than a computed variable
 beyond.beyond.constants.Earth = beyond.beyond.constants.Body(
     name="Earth",
-    mu = 3.986004415e5,  # [km^3 / s^2]
-    mass=5.97237e24,
+    mass=5.972167147378643e+24, # so that mu becomes mu = 3.986004415e5,  # [km^3 / s^2]
     equatorial_radius=6378.137, # [km]
     polar_radius = 6356.7523    ,#[km]
     flattening= 1 / 298.257222101,
@@ -134,5 +136,72 @@ def _new_nutation(date, eop_correction=True, terms=106):
     return epsilon_bar, delta_psi, delta_eps
 import beyond.beyond.frames.iau1980
 beyond.beyond.frames.iau1980._nutation = _new_nutation
+
+
+
+
+
+
+
+
+
+
+
+#Equinoctial form
+import beyond.beyond.orbits.forms
+
+EQUI_M = beyond.beyond.orbits.forms.Form("equinoctial_mean", ["a","h","k","p","q","lmb"])
+"""Equinoctial form
+    * a : semimajor axis [km]
+    * h : []
+    * k : []
+    * p : []
+    * q : []
+    * lambda : longitude [rad]
+"""
+beyond.beyond.orbits.forms._cache["equinoctial_mean"] = EQUI_M
+beyond.beyond.orbits.forms.KEPL_M + EQUI_M
+
+
+
+def _keplerian_mean_to_equinoctial_mean(cls,coord,center):
+
+    a, e, i, RAAN, w, M = coord
+
+    h = e*sin(w + RAAN)
+    k = e*cos(w + RAAN)
+    p = tan(i/2) * sin(RAAN)
+    q = tan(i/2) * cos(RAAN)
+    lmb = (M + w + RAAN) % (np.pi * 2)
+
+    return np.array([a,h,k,p,q,lmb], dtype=float)
+
+
+def _equinoctial_mean_to_keplerian_mean(cls,coord,center):
+    a,h,k,p,q,lmb = coord
+
+    #auxiliary angle eta
+    sin_eta = h / (sqrt(h**2 + k**2))
+    cos_eta = k / (sqrt(h**2 + k**2))
+    eta = arctan2(sin_eta,cos_eta)
+    if np.isnan(eta):
+        eta = 0
+
+    e = sqrt(h**2 + k**2)
+    i = (2*np.arctan(sqrt(p**2 + q**2))) % (2*np.pi)
+    sin_RAAN = p / (sqrt(p**2 + q**2))
+    cos_RAAN = q / (sqrt(p**2 + q**2))
+    RAAN = arctan2(sin_RAAN,cos_RAAN)
+    w = (eta - RAAN) % (np.pi * 2)
+    M = (lmb - eta) % (np.pi * 2)
+
+    return np.array([a, e, i, RAAN, w, M], dtype=float)
+
+
+setattr(beyond.beyond.orbits.forms.Form, "_keplerian_mean_to_equinoctial_mean", _keplerian_mean_to_equinoctial_mean)
+setattr(beyond.beyond.orbits.forms.Form, "_equinoctial_mean_to_keplerian_mean", _equinoctial_mean_to_keplerian_mean)
+
+
+
 
 print("Beyond Package was successfully setup")
