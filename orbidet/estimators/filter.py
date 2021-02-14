@@ -38,8 +38,9 @@ class OsculatingFilter():
         self.solver = solver
         self.date = Date(t)
 
+        f = lambda t,x : first_order_state_cov_differential_equation_cartesian(t,x,force)
         if filter is "EKF":
-            self.filter = EKF(np.array(orbit),P0,first_order_state_cov_differential_equation_cartesian)
+            self.filter = EKF(np.array(orbit),P0,f)
 
         # elif filter is "UKF":
         #     f_discrete = lambda x0,t0,t1: (solve_ivp(state_fct,(t0,t1),np.array(x0),method=solver,
@@ -49,7 +50,7 @@ class OsculatingFilter():
             raise Exception("Unknown filter {}".format(filter))
 
 
-    def filtering_cycle(self,date,ys):
+    def filtering_cycle(self,date,y,observer):
         """self.date -> t0
             date -> t1
         """
@@ -60,12 +61,11 @@ class OsculatingFilter():
             self.date += step
 
         # update step
-        for (observer,y) in zip(self.observers,ys):
-            if y is not None:
-                h = lambda x: observer.h(x,date,delete=True,frame=self.ECI_frame)
-                H = lambda x,t: observer.grad_h(x,date,frame=self.ECI_frame)
-                invS,v = self.filter.update(y,date,h,observer.R_default,H)
-                return invS,v
+        if y is not None:
+            h = lambda x: observer.h(x,date,frame=self.ECI_frame)
+            H = lambda x,t: observer.jacobian_h(x,date,frame=self.ECI_frame)
+            invS,v = self.filter.update(y,date,h,observer.R_default,H)
+            return invS,v
 
         return (None,None)
 

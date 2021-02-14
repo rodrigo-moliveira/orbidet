@@ -1,4 +1,4 @@
-"""This script creates measurement files of ground station passes
+"""This script creates measurement records of ground station passes
 """
 
 import numpy as np
