@@ -1,26 +1,22 @@
 Orbidet (by Rodrigo Oliveira)
-----------
+
 
     I developed this library as part of my master's thesis ("Orbit Determination for Low-Altitude
 Satellites Using Semianalytical Satellite Theory"). It implements Orbit Determination with
 Kalman Filters.
-
     Two orbital propagation schemes were implemented: Cowell propagation[1] and Semianalytical propagation[2][3], according
 to the theory developed in the aforementioned references. A simplified force model with:
       *Gravitational field harmonics (EGM96)
       *Atmospheric Drag (constant area, mass & CD) with exponential atmosphere
 was coded.
-
     This library was build on the Beyond Package (`github <https://github.com/galactics/beyond>`) by Jules David,
 which takes care of the low-level treatment of orbital definitions (orbits, time, reference frame rotations,...).
 I needed to do some changes on Beyond to better accommodate my code. These changes made in the 'orbidet.__init__.py'
 file (externally to the Beyond Package).
-
     This library is not very optimized (it's python after all :/ ). However, I did implement some modules in
 Cython, which makes the code much faster. Unfortunately, I didn't maintain these modules, and they are not updated
 to the latest/final/revised/clean version of orbidet. I will include them here so that you may use them, if you wish to
 optimize this code.
-
     Finally, this code is not licensed, but you are free to use it and adapt it to your projects!
 
 
