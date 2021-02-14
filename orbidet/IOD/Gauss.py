@@ -1,11 +1,12 @@
 import numpy as np
 from numpy import cos,sin,arctan2
 
-from beyond.constants import Earth
-from beyond.orbits import Orbit
+from beyond.beyond.constants import Earth
+from beyond.beyond.orbits import Orbit
+from beyond.beyond.dates import timedelta
 
-from orbidet.utils.diff_eqs import osculating_state_fct as fun
-COLOCAR O PROPAGATOR EM VEZ DISTO
+from orbidet.propagators import Cowell
+
 
 mu = Earth.mu
 
@@ -33,11 +34,12 @@ Rho1, Rho2, Rho3 - the direction cosine vectors of the
 """
 
 # utility functions used in GAUSS IOD
-def _az_el_to_ra_dec(az,el,ECI_to_horizon_fct,date):
+def _az_el_to_ra_dec(az,el,date,observer,frameECI):
     """
     given the observation azimuth (Az) and elevation (el), obtain topocentric right ascension (ra) and declination (dec)
     """
-    R_hor_to_ECI = ECI_to_horizon_fct(date).T
+    R_hor_to_ECI = observer.station.orientation.convert_to(date,frameECI)[0:3,0:3]
+
     rho_horizon = np.array( [cos(el)*sin(az) ,cos(el)*cos(az) ,sin(el)] )
     rho_ECI = R_hor_to_ECI @ rho_horizon
 
@@ -48,38 +50,30 @@ def _az_el_to_ra_dec(az,el,ECI_to_horizon_fct,date):
 
 class Gauss():
 
-    def __init__(self,IOD, ECI_to_horizon_fct,sensors,pos_R, ECI_frame):
+    def __init__(self,IOD, observer, frameECI):
         epoch1 = IOD[0][0];epoch2 = IOD[1][0];epoch3 = IOD[2][0]
+
         t1 = 0
         t2 = (epoch2-epoch1).total_seconds()
         t3 = (epoch3-epoch1).total_seconds()
         self.date2 = epoch2
 
-        if "Azimuth" in sensors and "Elevation" in sensors:
-            az1 = IOD[0][1][sensors.index("Azimuth")]
-            el1 = IOD[0][1][sensors.index("Elevation")]
-            ra1,dec1 = _az_el_to_ra_dec(az1,el1,ECI_to_horizon_fct,epoch1)
+        if "Azimuth" in observer.sensors and "Elevation" in observer.sensors:
+            az1 = IOD[0][1][observer.sensors.index("Azimuth")]
+            el1 = IOD[0][1][observer.sensors.index("Elevation")]
+            ra1,dec1 = _az_el_to_ra_dec(az1,el1,epoch1,observer,frameECI)
 
-            az2 = IOD[1][1][sensors.index("Azimuth")]
-            el2 = IOD[1][1][sensors.index("Elevation")]
-            ra2,dec2 = _az_el_to_ra_dec(az2,el2,ECI_to_horizon_fct,epoch2)
+            az2 = IOD[1][1][observer.sensors.index("Azimuth")]
+            el2 = IOD[1][1][observer.sensors.index("Elevation")]
+            ra2,dec2 = _az_el_to_ra_dec(az2,el2,epoch2,observer,frameECI)
 
-            az3 = IOD[2][1][sensors.index("Azimuth")]
-            el3 = IOD[2][1][sensors.index("Elevation")]
-            ra3,dec3 = _az_el_to_ra_dec(az3,el3,ECI_to_horizon_fct,epoch3)
+            az3 = IOD[2][1][observer.sensors.index("Azimuth")]
+            el3 = IOD[2][1][observer.sensors.index("Elevation")]
+            ra3,dec3 = _az_el_to_ra_dec(az3,el3,epoch3,observer,frameECI)
 
 
-        elif "Right Ascension" in sensors and "Declination" in sensors:
-            ra1 = IOD[0][1][sensors.index('Right Ascension')]
-            dec1 = IOD[0][1][sensors.index('Declination')]
-
-            ra2 = IOD[1][1][sensors.index('Right Ascension')]
-            dec2 = IOD[1][1][sensors.index('Declination')]
-
-            ra3 = IOD[2][1][sensors.index('Right Ascension')]
-            dec3 = IOD[3][1][sensors.index('Declination')]
         else:
-            raise Exception("Either the pair (Azimuth,Elevation) or (Right Ascension, Declination) is needed",
+            raise Exception("Ground station must contain sensors 'Azimuth' and 'Elevation'",
                             "to perform the Gauss method")
 
 
@@ -87,15 +81,13 @@ class Gauss():
         rho2 = np.array([cos(dec2)*cos(ra2),cos(dec2)*sin(ra2),sin(dec2)])
         rho3 = np.array([cos(dec3)*cos(ra3),cos(dec3)*sin(ra3),sin(dec3)])
 
-        R1 = pos_R(epoch1,ECI_frame)
-        R2 = pos_R(epoch2,ECI_frame)
-        R3 = pos_R(epoch3,ECI_frame)
+        R1 = observer.getStationECICoordinates(epoch1,frameECI)
+        R2 = observer.getStationECICoordinates(epoch2,frameECI)
+        R3 = observer.getStationECICoordinates(epoch3,frameECI)
 
-        self.ECI_frame=ECI_frame
+        self._solve(t1,t2,t3,R1,R2,R3,rho1,rho2,rho3,frameECI)
 
-        self._solve(t1,t2,t3,R1,R2,R3,rho1,rho2,rho3)
-
-    def _solve(self,t1,t2,t3,R1,R2,R3,Rho1,Rho2,Rho3):
+    def _solve(self,t1,t2,t3,R1,R2,R3,Rho1,Rho2,Rho3,frameECI):
 
         #step 1
         tau1 = (t1 - t2)
@@ -149,12 +141,9 @@ class Gauss():
 
         #step 12
         v2 = (-f3*r1 + f1*r3)/(f1*g3 - f3*g1)
-
-        self.orbit2 = Orbit(self.date2, list(r2)+list(v2), "cartesian",self.ECI_frame, None)
+        self.orbit2 = Orbit(list(r2)+list(v2), self.date2, "cartesian",frameECI, None)
 
         keplerian = self.orbit2.copy(form = "keplerian")
-        # print(repr(keplerian));exit()
-        # print results
         print('Results of Gauss IOD [{}]:'.format(self.date2))
         print('r [km]: ',r2)
         print('v [km/s]: ',v2)
@@ -164,6 +153,7 @@ class Gauss():
         print('a [km]: ',keplerian.a)
         print('e: ',keplerian.e)
         print('theta [deg]: ', np.rad2deg(keplerian.ν))
+
 
     def positive_root(self,roots, poly):
         """
@@ -195,7 +185,11 @@ class Gauss():
         """
         this function propagates the solution from the middle observation t2 to t4 (given as argument)
         """
-        dyn = lambda t,x : fun(t,x,force)
-        solver = integrate.solve_ivp(dyn, (self.date2.mjd*86400,epoch_final.mjd*86400), np.array(self.orbit2), method='RK45', t_eval=[epoch_final.mjd*86400])
-        x = solver.y.flatten()
-        return x
+        step = timedelta(seconds=5)
+        prop = Cowell(step,force,method="RK45",frame=self.orbit2.frame)
+        self.orbit2.propagator = prop
+        gen = self.orbit2.iter(stop=epoch_final,step=step)
+
+        for orbit in gen:
+            pass
+        return orbit

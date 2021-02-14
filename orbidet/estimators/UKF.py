@@ -7,9 +7,7 @@ import numpy as np
 from scipy import integrate
 from scipy.stats import chi2
 from scipy.linalg import cholesky
-from numpy import linalg as la
 
-from orbidet.cython_modules.filter_eqs import predic_dif_eq_sqroot as predict_cython
 
 def _f(x):
     print(x)
@@ -119,7 +117,7 @@ def isPD(B):
         return True
     except la.LinAlgError:
         return False
-    
+
 
 def UT_matrix(f,x_mean,P_x,lamb,wm,W,return_sigmas=False):
     """

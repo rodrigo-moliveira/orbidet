@@ -3,23 +3,20 @@
 import numpy as np
 from scipy.integrate import solve_ivp
 
-from beyond.orbits import Orbit
-from beyond.dates import Date,timedelta
+from beyond.beyond.orbits import Orbit
+from beyond.beyond.dates import Date,timedelta
 
 from .EKF import EKF
-from .UKF import UKF, CD_UKF
+from .UKF import UKF
 from .ESKF import ESKF
 from .USKF import USKF
-from ..utils.diff_eqs import osculating_state_fct,discrete_function,finite_differencing,equinoctial_state_jacobian_mean
-from ..utils.diff_eqs import partials_cartesian_wrt_equinocital
-from orbidet.cython_modules.filter_eqs import discrete_function as discrete_cy
-from orbidet.propagators.short_period_transf import NumAv_MEP_transf
-
-from orbidet.estimators.utils import CartesianCov_to_MeanEq,MeanEqCov_to_cartesian
+from .utils import CartesianCov_to_MeanEq,MeanEqCov_to_cartesian
+from orbidet.propagators.utils import cartesian_osculating_state_fct
+from .utils import first_order_state_cov_differential_equation_cartesian
 
 class OsculatingFilter():
-    def __init__(self,filter,orbit,t,P0,Q, observers,force,ECI_frame,solver,
-                 use_cython=False,maximum_dt = 30,**kwargs):
+    def __init__(self,filter,orbit,t,P0,Q, observer,force,ECI_frame,solver,
+                 maximum_dt = timedelta(seconds=30),**kwargs):
         """
         args:
             *filter (str) - EKF, CD-UKF or DD-UKF
@@ -33,30 +30,21 @@ class OsculatingFilter():
 
         """
         #state function
-        state_fct = force.osculating_fct
         self.maximum_dt = maximum_dt
         self.ECI_frame = ECI_frame
 
-        self.observers = observers
-        if Q["type"] is not "continuous" and Q["type"] is not "discrete":
-            raise Exception("Q type should be 'continuous' or 'discrete'")
+        self.observer = observer
         self.Q = Q
         self.solver = solver
         self.date = Date(t)
 
-        filter_info = kwargs.get("info",None)
         if filter is "EKF":
-            self.filter = EKF(np.array(orbit),P0,force.EKF_LS_diff_eq)
-        # elif filter is "RAEKF":
-        #     self.filter = EKF(np.array(orbit),P0,force.EKF_LS_diff_eq)
-        elif filter is "UKF":
-            f_discrete = lambda x0,t0,t1: (solve_ivp(state_fct,(t0,t1),np.array(x0),method=solver,
-                                                    t_eval=[t1])).y.flatten()
-            self.filter = UKF(np.array(orbit),P0,f_discrete)
-        elif filter is "RAUKF":
-            f_discrete = lambda x0,t0,t1: (solve_ivp(state_fct,(t0,t1),np.array(x0),method=solver,
-                                                    t_eval=[t1])).y.flatten()
-            self.filter = UKF(np.array(orbit),P0,f_discrete,robust_variation=True,parameters=filter_info["robust"])
+            self.filter = EKF(np.array(orbit),P0,first_order_state_cov_differential_equation_cartesian)
+
+        # elif filter is "UKF":
+        #     f_discrete = lambda x0,t0,t1: (solve_ivp(state_fct,(t0,t1),np.array(x0),method=solver,
+        #                                             t_eval=[t1])).y.flatten()
+        #     self.filter = UKF(np.array(orbit),P0,f_discrete)
         else:
             raise Exception("Unknown filter {}".format(filter))
 
@@ -68,7 +56,6 @@ class OsculatingFilter():
         # predict step
         while(self.date < date):
             step = date - self.date if (date - self.date <= self.maximum_dt) else self.maximum_dt
-            # print("iterating from ",self.date, "to ",self.date+step)
             self.filter.predict(self.date.mjd * 86400,(self.date+step).mjd*86400, self.Q,method=self.solver)
             self.date += step
 
@@ -89,6 +76,10 @@ class OsculatingFilter():
     @property
     def P(self):
         return self.filter.P
+
+
+
+
 
 def obs_jacobian_wrt_equinoctial(t,x,H,frame):
     orb = Orbit(t,x,"equinoctial",frame,None)

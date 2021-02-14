@@ -4,30 +4,6 @@ This file contains a class to build an extended kalman filter
 import numpy as np
 from scipy import integrate
 
-# used both in EKF and LS
-def build_dif_eq(state_fun,jacobian_state):
-    def predic_dif_eq(t,Y):
-        """
-        wrapper that contains the state and phi diff eqs.
-        These two functions are packed in a system to feed the ODE solver
-        This system is used for the EKF and LS
-        """
-        #unpack the variables
-        Y_matrix = np.reshape(Y,(7,6))
-        y = Y_matrix[0]
-        phi = Y_matrix[1:]
-
-        #apply differential functions
-        dydt = state_fun(t,y) #derivative of position and velocity
-        F = jacobian_state(y)
-        dphidt = F @ phi
-
-        #pack the variables
-        return np.append(dydt,dphidt)
-    return predic_dif_eq
-
-
-
 
 class EKF():
     def __init__(self,x0,P0,EKF_LS_diff_eq):
@@ -54,12 +30,7 @@ class EKF():
         phi = Y_matrix[1:]
 
         # discretization of Q
-        if not isinstance(Q,dict):
-            Qd = Q
-        elif Q["type"] is "discrete":
-            Qd = Q["value"]
-        else: #Q["type"] is "continuous":
-            Qd = phi @ Q["value"] @ phi.T * (t_out - t_in)
+        Qd = phi @ Q @ phi.T * (t_out - t_in)
         self.P = phi @ self.P @ phi.T + Qd
 
     def update(self,obs,t,h,R,grad):

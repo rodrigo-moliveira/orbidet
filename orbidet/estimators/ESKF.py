@@ -5,8 +5,8 @@ import numpy as np
 from scipy import integrate
 from scipy.interpolate import CubicHermiteSpline,CubicSpline
 
-from beyond.orbits import Orbit
-from beyond.dates import Date
+from beyond.beyond.orbits import Orbit
+
 
 # used both in EKF and LS
 def build_dif_eq(state_fun,jacobian_state):

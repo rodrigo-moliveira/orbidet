@@ -21,3 +21,8 @@ class GravityError(OrbidetError):
     """Missing value in DataBase
     """
     pass
+
+class LSnotConverged(OrbidetError):
+    """Least Squares did not converge
+    """
+    pass

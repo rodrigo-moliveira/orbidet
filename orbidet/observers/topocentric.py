@@ -74,7 +74,7 @@ class GroundStation():
             respects the one provided by *sensors*
         """
         if not isinstance(orbit,Orbit):
-            orbit = Orbit(date,orbit,"cartesian",frame,None)
+            orbit = Orbit(orbit,date,"cartesian",frame,None)
 
 
         orbit.frame = self.station
@@ -98,45 +98,50 @@ class GroundStation():
         return np.array(obs)
 
 
-#     def grad_h(self,orbit,t=None,frame="EME2000"):
-#         """computes the jacobian matrix of the measurement model
-#         args:
-#             *orbit(Orbit)
-#         return:
-#             *Jacobian matrix(numpy.ndarray)
-#         """
-#         if not isinstance(orbit,Orbit):
-#             orbit = Orbit(t,orbit,"cartesian",frame,None)
-#         self.orbit = orbit
-#
-#         range = self._dict["range"]
-#         s = self._dict["s"]
-#         s_dot = self._dict["s_dot"]
-#
-#         # get matrix ECI to topocentric
-#         rot_ECI_horizon = self.ITRF_to_TOP @ self.ECI_ECEF_rot(orbit.date)
-#         grad = np.zeros((len(self.sensors),6))
-#         i = 0
-#         for sensor in self.sensors:
-#             if sensor == "Range":
-#                 grad[i,0:3] = s/range @ rot_ECI_horizon
-#                 i+=1
-#             elif sensor == "Azimuth":
-#                 grad[i,0:3] = [s[1] / (s[0]**2+s[1]**2) , -s[0]/(s[0]**2+s[1]**2), 0] @ rot_ECI_horizon
-#                 i+=1
-#             elif sensor == "Elevation":
-#                 aux = np.sqrt((s[0])**2 + (s[1])**2) * (range)**2
-#                 grad[i,0:3] = [-s[0]*s[2]/aux , -s[1]*s[2]/aux , np.sqrt((s[0])**2 + (s[1])**2) / (range)**2 ] @ rot_ECI_horizon
-#                 i+=1
-#             elif sensor == "Range Rate":
-#                 s_dot = self._dict["s_dot"]
-#                 range_rate = self._dict.setdefault("range rate", (np.dot(s,s_dot))/range)
-#                 grad[i,0:3] = (((s_dot*range - s*range_rate)/range**2) @ rot_ECI_horizon)
-#                 grad[i,3:] = (s/range) @ rot_ECI_horizon
-#                 i+=1
-#         del(self.orbit)
-#         return grad
-#
+    def jacobian_h(self,orbit,date=None,frame="EME2000"):
+        """computes the jacobian matrix of the measurement model
+        args:
+            *orbit(Orbit)
+        return:
+            *Jacobian matrix(numpy.ndarray)
+        """
+        if not isinstance(orbit,Orbit):
+            orbit = Orbit(orbit,date,"cartesian",frame,None)
+        frame = orbit.frame
+
+        orbit.frame = self.station
+        s = orbit[0:3]
+        s_dot = orbit[3:]
+        range = np.linalg.norm(s)
+
+        # get matrix ECI to topocentric
+        rot_ECI_topocentric = self.station.orientation.convert_to(orbit.date,frame.orientation).T[0:3,0:3]
+
+
+        # get gradient
+        grad = np.zeros((len(self.sensors),6))
+        i = 0
+        for sensor in self.sensors:
+            if sensor == "Range":
+                grad[i,0:3] = s/range @ rot_ECI_topocentric
+                i+=1
+            elif sensor == "Azimuth":
+                grad[i,0:3] = [s[1] / (s[0]**2+s[1]**2) , -s[0]/(s[0]**2+s[1]**2), 0] @ rot_ECI_topocentric
+                i+=1
+            elif sensor == "Elevation":
+                aux = np.sqrt((s[0])**2 + (s[1])**2) * (range)**2
+                grad[i,0:3] = [-s[0]*s[2]/aux , -s[1]*s[2]/aux , np.sqrt((s[0])**2 + (s[1])**2) / (range)**2 ] @ rot_ECI_topocentric
+                i+=1
+            elif sensor == "Range Rate":
+                range_rate = np.dot(s,s_dot) / range
+                grad[i,0:3] = (((s_dot*range - s*range_rate)/range**2) @ rot_ECI_topocentric)
+                grad[i,3:] = (s/range) @ rot_ECI_topocentric
+                i+=1
+        return grad
+
+
+
+
     @classmethod
     def _get_R(cls, sensors, dict_std):
         # Defining the noise matrices
