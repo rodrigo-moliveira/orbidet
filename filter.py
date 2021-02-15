@@ -17,7 +17,7 @@ from orbidet.observers import GroundStation, get_obs
 from orbidet.force import Force,TwoBody,AtmosphericDrag,GravityAcceleration,ExponentialDragDb
 
 from orbidet.IOD.Gauss import Gauss
-from orbidet.estimators import LeastSquares,OsculatingFilter
+from orbidet.estimators import LeastSquares,CowellFilter,SemianalyticalFilter
 from orbidet.errors import LSnotConverged
 from orbidet.metrics.metrics import Metrics
 from orbidet.observers.utils import matrix_RSW_to_ECI
@@ -69,15 +69,16 @@ def main():
     drag = AtmosphericDrag(sat,DragHandler)
     two_body = TwoBody()
     force.addForce(grav)
-    force.addForce(drag)
+    # force.addForce(drag)
     force.addForce(two_body)
     # print(force)
 
 
     ################# Estimation Setup #################
     InitialOD_LEN = 10 # Number of observations to collect in initialization procedure
-    filterName = "EKF" #possible filters: EKF, UKF, ESKF or USKF
+    filterName = "ESKF" #possible filters: EKF, UKF, ESKF or USKF
     Q_cartesian = np.block([[10**-9*np.eye(3),np.zeros((3,3))],[np.zeros((3,3)),10**-12*np.eye(3)]]) #process noise cov
+    Q_equinoctial = np.diag([1e-10,1e-14,1e-14,1e-14,1e-14,1e-12])
     metrics = Metrics(MonteCarlo,RMSE_errors = True,
                                               consistency_tests = True,abs_erros=True,frames = ("ECI","RSW"))
 
@@ -114,11 +115,13 @@ def main():
         except LSnotConverged:
             print("this MC did not converge. Retrying this Monte Carlo run")
             continue
-        orbit,P,t = LS.get_propagated_solution()
+        orbit,P,t = LS.get_propagated_solution(frameECI)
 
-
-        # create Kalman filter
-        filter = OsculatingFilter(filterName,orbit,t,P,Q_cartesian, observer,force,frameECI,"RK45")
+        # create Kalman filter (uncomment desired filter: Cowell or Semianalytical)
+        # filter = CowellFilter(filterName,orbit,t,P,Q_cartesian, observer,force,frameECI,"RK45")
+        filter = SemianalyticalFilter(filterName,orbit,P,t,Q_equinoctial,
+                          observer,force,frameECI,"RK45",timedelta(hours=1),
+                          quadrature_order = 20,DFT_lmb_len = 16, DFT_sideral_len=16)
 
         # continue the simulation until the end of the generator
         for orbit in gen:
@@ -127,9 +130,10 @@ def main():
 
             y = get_obs(orbit.copy(),observer,dict_std,apply_noise,LOS) #get reference observation and corrupt it with noise
             invS,v = filter.filtering_cycle(orbit.date,y,observer)
-            metrics.append_estimation(t,np.array(orbit),filter.x,
-                    R_ECI_to_RSW=ECI_to_RSW,P = filter.P,Sinv = invS,obs_err = v)
+            metrics.append_estimation(t,np.array(orbit),filter.x_osc.copy(form="cartesian"),
+                    R_ECI_to_RSW=ECI_to_RSW,P = filter.P_osc,Sinv = invS,obs_err = v)
             print(orbit.date)
+
 
 
         run += 1

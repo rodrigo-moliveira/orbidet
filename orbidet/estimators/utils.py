@@ -4,6 +4,7 @@ import numpy as np
 
 from orbidet.propagators.utils import cartesian_osculating_state_fct
 
+from beyond.beyond.orbits import Orbit
 from beyond.beyond.constants import Earth
 
 mu = Earth.mu
@@ -79,6 +80,25 @@ def first_order_state_cov_differential_equation_cartesian(t,Y,force):
 
 
 
+############ Finite Differencing ############
+
+def finite_differencing(f,x,t,epsons):
+    """
+    compute central finite differencing df/dx at x
+    """
+    N = len(x)
+    df_dx = []
+    for i in range(len(x)):
+        _eps = epsons[i]
+        eps = np.zeros(N)
+        eps[i] = _eps
+        df_dx.append((f(t,x+eps) - f(t,x-eps))/2/_eps)
+    return np.array(df_dx).T
+
+
+
+
+
 def MeanEqCov_to_cartesian(P_eq,dx_deq_jacbn,B1=None):
     """convert a covariance matrix in mean equinoctial state to osculating cartesian state
     P_x = G @ P_eq @ G.T
@@ -102,3 +122,68 @@ def CartesianCov_to_MeanEq(Px,dx_deq_jacbn,B1=None):
     G = np.linalg.inv(dx_deq_jacbn @ (np.eye(n) + B1))
     Peq = G @ Px @ G.T
     return Peq
+
+
+def obs_jacobian_wrt_equinoctial(t,x,H,frame):
+    orb = Orbit(x,t,"equinoctial_mean",frame,None)
+    Dosc_Dequict = partials_cartesian_wrt_equinocital(orb)
+    orb.form = "cartesian"
+    grad_h = H(orb)
+    return grad_h @ Dosc_Dequict
+
+
+def partials_cartesian_wrt_equinocital(orb):
+    """
+    pg 9 of  [SemiAnalytic Satellite Theory]
+        (Partial Derivatives of Position and Velocity with Respect
+        to the Equinoctial Elements)
+    """
+    orb.form = "equinoctial_mean"
+    a,h,k,p,q,lmb = orb
+    orb.form = "cartesian"
+    r,v = np.array(orb[0:3]),np.array(orb[3:])
+    _r = np.linalg.norm(r)
+    n = np.sqrt(mu/a**3)
+
+    A = np.sqrt(mu*a)
+    B = np.sqrt(1-h**2-k**2)
+    C = 1 + p**2 + q**2
+
+    f = 1/C*np.array([1-p**2+q**2,2*p*q,-2*p])
+    g = 1/C*np.array([2*p*q,1+p**2-q**2,2*q])
+    w = 1/C*np.array([2*p,-2*q,1-p**2-q**2])
+
+    X = np.dot(r,f) ; Y = np.dot(r,g)
+    Xd = np.dot(v,f) ; Yd = np.dot(v,g)
+
+    dX_dh = -k*Xd/(n*(1+B)) + a*Y*Yd/A/B
+    dY_dh = -k*Yd/(n*(1+B)) - a*X*Yd/A/B - a
+    dX_dk = h*Xd/(n*(1+B)) + a*Y*Xd/A/B - a
+    dY_dk = h*Yd/(n*(1+B)) - a*X*Xd/A/B
+
+    dXd_dh = a*Yd**2/A/B + A/_r**3*(a*k*X/(1+B)-Y**2/B)
+    dYd_dh = -a*Xd*Yd/A/B + A/_r**3*(a*k*Y/(1+B) + X*Y/B)
+    dXd_dk = a*Xd*Yd/A/B - A/_r**3*(a*h*X/(1+B)+X*Y/B)
+    dYd_dk = -a*Xd**2/A/B - A/_r**3*(a*h*Y/(1+B)-X**2/B)
+
+    # position derivatives
+    dr_da = r / a
+    dr_dh = dX_dh*f + dY_dh*g
+    dr_dk = dX_dk*f + dY_dk*g
+    dr_dp = 2*(q * (Y*f - X*g) - X*w)/C
+    dr_dq = 2*(p * (X*g - Y*f) + Y*w)/C
+    dr_dlmb = v / n
+
+
+    # velocity derivatives
+    dv_da = -v/2/a
+    dv_dh = dXd_dh*f + dYd_dh*g
+    dv_dk = dXd_dk*f + dYd_dk*g
+    dv_dp = 2*(q*(Yd*f - Xd*g) - Xd*w)/C
+    dv_dq = 2*(p*(Xd*g - Yd*f) + Yd*w)/C
+    dv_dlmb = -n*a**3*r/_r**3
+
+    Jacobian_r = np.array([dr_da,dr_dh,dr_dk,dr_dp,dr_dq,dr_dlmb]).T
+    Jacobian_v = np.array([dv_da,dv_dh,dv_dk,dv_dp,dv_dq,dv_dlmb]).T
+    Jacobian = np.block([[Jacobian_r],[Jacobian_v]])
+    return Jacobian

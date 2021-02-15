@@ -1,2 +1,2 @@
 from .LeastSquares import LeastSquares
-from .filter import OsculatingFilter
+from .filter import CowellFilter,SemianalyticalFilter

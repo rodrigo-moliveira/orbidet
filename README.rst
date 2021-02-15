@@ -1,4 +1,4 @@
-Orbidet (by Rodrigo Oliveira)
+Orbidet
 ----------
 
 I developed this library as part of my master's thesis ("Orbit Determination for Low-Altitude
@@ -8,25 +8,25 @@ Kalman Filters.
 Two orbital propagation schemes were implemented: Cowell propagation[1] and Semianalytical propagation[2][3], according
 to the theory developed in the aforementioned references. A simplified force model with:
 
-      *Gravitational field harmonics (EGM96)
+      * Gravitational field harmonics (EGM96)
 
-      *Atmospheric Drag (constant area, mass & CD) with exponential atmosphere
+      * Atmospheric Drag (constant area, mass & CD) with exponential atmosphere
 
 was coded.
 
 The filters implemented are:
 
-      *Gauss Initial Orbit Determination
+      * Gauss Initial Orbit Determination
 
       * Batch Least Squares
 
-      *Extended and Unscented Cowell Kalman Filter (EKF and UKF)
+      * Extended and Unscented Cowell Kalman Filter (EKF and UKF)
 
-      *Extended and Unscented Semianalytical Kalman Filter (ESKF and USKF)
+      * Extended and Unscented Semianalytical Kalman Filter (ESKF and USKF)
 
 USKF is an original contribution of my thesis.
 
-This library was build on the Beyond Package (`github <https://github.com/galactics/beyond>`) by Jules David,
+This library was build on top of the Beyond Package (`github <https://github.com/galactics/beyond>`) by Jules David,
 which takes care of the low-level treatment of orbital definitions (orbits, time, reference frame rotations,...).
 I needed to do some changes on Beyond to better accommodate my code. These changes made in the 'orbidet.__init__.py'
 file (externally to the Beyond Package).
@@ -55,15 +55,15 @@ Some examples illustrating the use orbidet are included in the root folder of th
 Package Requirements
 ----------
 
-Numpy
+      * Numpy
 
-Scipy
+      * Scipy
 
-matplotlib
+      * matplotlib
 
-pandas
+      * pandas
 
-Beyond (an explicit copy of the version 0.7.2 is included here)
+      * Beyond (an explicit copy of the version 0.7.2 is included here)
 
 
 References
@@ -84,3 +84,8 @@ Contacts
 
 If you have any doubts about this package, feel free to contact me through my email
 rodrigo.d.oliveira@tecnico.ulisboa.pt
+
+or my linkedin page
+linkedin.com/in/rodrigo-moroliveira/
+
+Rodrigo Oliveira

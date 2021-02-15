@@ -124,7 +124,7 @@ class ESKF():
         solver = integrate.solve_ivp(self.f, (_tflt[2],_tflt[3]),
                                      x, method=method, t_eval=[_tflt[3]])
         x2 = solver.y.flatten()
-        orbs = [Orbit(ti,xi,"equinoctial",frame,None) for ti,xi in zip(_t,[x0,x_half,x,x2])]
+        orbs = [Orbit(xi,ti,"equinoctial_mean",frame,None) for ti,xi in zip(_t,[x0,x_half,x,x2])]
         Cy0 = getFourierCoefs(orbs[0],True)
         Cy1 = getFourierCoefs(orbs[1],True)
         Cy2 = getFourierCoefs(orbs[2],True)
@@ -147,7 +147,7 @@ class ESKF():
         self.short_period_interpolator = dct
 
 
-    def observation_grid(self,ys,hs,Rs,t,frame,Hs,B1_fct):
+    def observation_grid(self,y,h,R,t,frame,H,B1_fct):
         """update step
         """
         Sinv = None
@@ -157,10 +157,14 @@ class ESKF():
         x_t = self.state_interpolator(t.mjd*86400)
         phi_t = self.phi_interpolator(t.mjd*86400)
         phi_inv_t = self.phi_S
+        # print(x_t)
+        # print(phi_t)
+        # print(phi_inv_t)
+        # exit()
 
         # interpolate short period function etas
         dctFouriers = self.interpolate_SPG(t.mjd*86400,self.short_period_interpolator)
-        etas = self.getEtasFromFourierCoefs(dctFouriers,Orbit(t,x_t,"equinoctial",frame,None),True)
+        etas = self.getEtasFromFourierCoefs(dctFouriers,Orbit(x_t,t,"equinoctial_mean",frame,None),True)
 
         # compute transitional matrices and predicted corrections
         phi_obs = phi_t @ phi_inv_t
@@ -170,30 +174,23 @@ class ESKF():
         B1 = B1_fct(t,x_t)
 
         # discretization of Q
-        Q = self.Q["value"]
-        if callable(Q):
-            Q = Q(Orbit(t,x_t+self.corrections,"equinoctial",frame,None))
-        if self.Q["type"] is "discrete":
-            Qd = Q
-        else: #Q["type"] is "continuous":
-            Qd = phi_obs @ Q @ phi_obs.T * ((t - self._t).total_seconds())
+        Qd = phi_obs @ self.Q @ phi_obs.T * ((t - self._t).total_seconds())
         self.P = phi_obs @ self.P @ phi_obs.T + Qd #predicted covariance
 
-        # iterate over observers:
-        for y,h,H,R in zip(ys,hs,Hs,Rs):
-            if y is not None:
-                #for each observer, recalculate osc state (with new updated corrections)
-                x_osc = x_t + self.corrections + etas + B1 @ self.corrections
 
-                # residuals of observations and observation jacobian
-                residuals = y - h(t,x_osc)
-                H = H(t,x_osc) @ (np.eye(len(x_t)) + B1)
+        if y is not None:
+            #for each observer, recalculate osc state (with new updated corrections)
+            x_osc = x_t + self.corrections + etas + B1 @ self.corrections
 
-                # update phase of filter
-                Sinv = np.linalg.inv(H @ self.P @ H.T + R)
-                K = self.P @ H.T @ Sinv
-                self.corrections += K @ residuals
-                self.P = (np.eye(len(x_osc)) - K @ H) @ self.P
+            # residuals of observations and observation jacobian
+            residuals = y - h(t,x_osc)
+            H = H(t,x_osc) @ (np.eye(len(x_t)) + B1)
+
+            # update phase of filter
+            Sinv = np.linalg.inv(H @ self.P @ H.T + R)
+            K = self.P @ H.T @ Sinv
+            self.corrections += K @ residuals
+            self.P = (np.eye(len(x_osc)) - K @ H) @ self.P
 
         self.mean_state = {"t":t,"x":x_t+self.corrections,"frame":frame}
         self.osc_state = {"t":t,"x":x_t + self.corrections + etas + B1 @ self.corrections,"frame":frame}
@@ -224,21 +221,21 @@ class ESKF():
         return self._mean_state
     @mean_state.setter
     def mean_state(self,info):
-        self._mean_state = Orbit(info["t"],info["x"],"equinoctial",info["frame"],None)
+        self._mean_state = Orbit(info["x"],info["t"],"equinoctial_mean",info["frame"],None)
 
     @property
     def nominal_mean_state(self):
         return self._nominal_mean_state
     @nominal_mean_state.setter
     def nominal_mean_state(self,info):
-        self._nominal_mean_state = Orbit(info["t"],info["x"],"equinoctial",info["frame"],None)
+        self._nominal_mean_state = Orbit(info["x"],info["t"],"equinoctial_mean",info["frame"],None)
 
     @property
     def osc_state(self):
         return self._osc_state
     @osc_state.setter
     def osc_state(self,info):
-        self._osc_state = Orbit(info["t"],info["x"],"equinoctial",info["frame"],None)
+        self._osc_state = Orbit(info["x"],info["t"],"equinoctial_mean",info["frame"],None)
 
     @property
     def P_mean(self):

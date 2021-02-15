@@ -4,13 +4,9 @@ The implementations are based on the algorithms of the paper
 #On Unscented KF for State Estimation of Continuous-Time Nonlinear Systems
 """
 import numpy as np
-from scipy import integrate
-from scipy.stats import chi2
 from scipy.linalg import cholesky
 
 
-def _f(x):
-    print(x)
 
 def matrix_function(f,X):
     """
@@ -35,36 +31,6 @@ def getSigmafromState(x,P_x,lamb):
     sigma = np.full((2*n+1,n),x).T
     sigma = sigma + np.sqrt(n+lamb) * np.block([np.zeros((n,1)),A,-A])
     return sigma
-
-
-def _getAplus(A):
-    eigval, eigvec = np.linalg.eig(A)
-    Q = np.matrix(eigvec)
-    xdiag = np.matrix(np.diag(np.maximum(eigval, 0)))
-    return Q*xdiag*Q.T
-
-def _getPs(A, W=None):
-    W05 = np.matrix(W**.5)
-    return  W05.I * _getAplus(W05 * A * W05) * W05.I
-
-def _getPu(A, W=None):
-    Aret = np.array(A.copy())
-    Aret[W > 0] = np.array(W)[W > 0]
-    return np.matrix(Aret)
-
-def nearPD(A, nit=10):
-    n = A.shape[0]
-    W = np.identity(n)
-    # W is the matrix used for the norm (assumed to be Identity matrix here)
-    # the algorithm should work for any diagonal W
-    deltaS = 0
-    Yk = A.copy()
-    for k in range(nit):
-        Rk = Yk - deltaS
-        Xk = _getPs(Rk, W=W)
-        deltaS = Xk - Rk
-        Yk = _getPu(Xk, W=W)
-    return Yk
 
 
 def nearestPD(A):
@@ -121,12 +87,15 @@ def isPD(B):
 
 def UT_matrix(f,x_mean,P_x,lamb,wm,W,return_sigmas=False):
     """
-    implementation of the matrix UT algorithm 4.1 from [the CD-UKF paper]
+    implementation of the matrix UT algorithm 4.1 from [1]
+    [1] On Unscented Kalman Filtering for State Estimation of Continuous-Time Nonlinear Systems,
+        Simo Särkkä
+
     INPUTS:
-        #f - non-linear state function that receives a vector input (the state)
+        f - non-linear state function that receives a vector input (the state)
             However in the matrix form algorithm the non-linear function is applied
-            to a matrix (i.e. for each column) this new matrix non-linear function is defined as matrix_function(.)
-        # x_mean and P_x are the state mean and covariance of the variable to be transformed
+            to a matrix (i.e. for each column)
+         x_mean and P_x are the state mean and covariance of the variable to be transformed
     """
     n = len(x_mean)
     """Calculating the sigma points"""
@@ -151,44 +120,6 @@ def UT_matrix(f,x_mean,P_x,lamb,wm,W,return_sigmas=False):
         return (y_mean,P_y,P_xy)
 
 
-def predic_dif_eq_sqroot(t,X,f,wm,W,Q,n,lamb):
-    """
-    This function applies the square root version of the continuous predict step
-    equation (35)
-    This fuction does not rely on the UT_matrix() function because the implementation is a bit different
-    (it would get a bit messy to try an unified solution - plus this way it's less computations)
-    """
-    #unpack the sigma Matrix
-    sigmaX = np.reshape(X,(n,2*n+1))
-
-    sqrt_c = np.sqrt(n+lamb)
-
-    #recover A from sigmaX and get inv(A)
-    m = sigmaX[0:,0]
-    mMatrix = np.full((n,n),m).T
-
-    A = (sigmaX[0:,1:7] - mMatrix) / sqrt_c
-    A_inv = np.linalg.inv(A)
-
-    #apply state function to sigmaX
-    fun = lambda _x: f(t,_x)
-    sigmaY = matrix_function(fun,sigmaX) # sigmaY = f(X(t),t)
-
-    #get M and phi(M)
-    M = A_inv @ ( sigmaX @ W @ sigmaY.T + sigmaY @ W @ sigmaX.T + Q) @ A_inv.T
-    phi = np.tril(np.ones((n,n)))
-    np.fill_diagonal(phi, 0.5)
-    phi_M = phi * M                         #element-wise multiplication. eq (33)
-
-    #finally, get dX_dt (column by column) and pack result
-    mean_sigY = np.full((2*n+1,n),sigmaY@wm).T
-
-    block = mean_sigY + sqrt_c*np.block([np.zeros((n,1)),A @ phi_M,-A @ phi_M])
-    dX_dt = block.flatten()
-    return dX_dt
-
-
-#UKF classes
 class UKF():
     """
     This class implements the original UKF (Discret form - DD-UKF)
@@ -216,10 +147,6 @@ class UKF():
         #calculate weights
         self.calculate_weights(n,k,alpha,beta)
 
-        self.robust = kwargs.get("robust_variation",False)
-        if self.robust:
-            self.robust_info = kwargs["parameters"]
-            self.Qd = None
 
     def calculate_weights(self,n,k,alpha,beta):
         """
@@ -246,17 +173,10 @@ class UKF():
         self.x,P,Px_k_kbef = UT_matrix(f,self.x,self.P,self.lamb,self.W_m,self.W)
 
         # discretization of Q
-        if not isinstance(Q,dict):
-            Qd = Q
-        elif Q["type"] is "discrete":
-            Qd = Q["value"]
-        else: #Q["type"] is "continuous":
-            phi = Px_k_kbef.T @ np.linalg.inv(self.P)
-            Qd = phi @ Q["value"] @ phi.T * (date_out - date_in)
+        phi = Px_k_kbef.T @ np.linalg.inv(self.P)
+        Qd = phi @ Q @ phi.T * (date_out - date_in)
         self.P = P + Qd
 
-        if self.robust:
-            self.x_pred = self.x.copy()
 
     def update(self,y,t,h,R,*args):
         """
@@ -273,70 +193,4 @@ class UKF():
         self.x = self.x + K @ v
         self.P = self.P - K @ Py @ K.T
 
-        if self.robust:
-            # robust adaptive extra iteration
-            mu = (y - h(self.x_pred)).reshape((len(y),1))
-            phi = mu.T @ Sinv @ mu
-            threshold = chi2.isf(q=1-self.robust_info["prob"], df=len(mu))
-            if phi > threshold:
-                # perform correction
-                lmb = max(self.robust_info["lambda_0"], (phi - self.robust_info["a"]* threshold) / phi)
-                self.Qd = (1 - lmb)*self.Qd + lmb*(K @ mu @ mu.T @ K.T)
-                print(self.Qd)
-
-                # 1.
-                y_mean,Py,Pxy = UT_matrix(h,self.x,self.P,self.lamb,self.W_m,self.W)
-                self.P += self.Qd
-
-                # 2.
-                Py = Py + R
-                K = Pxy @ np.linalg.inv(Py)
-                self.x = self.x + K @ (y - y_mean)
-                self.P = self.P - K @ Py @ K.T
-
         return Sinv,v
-
-class CD_UKF(UKF):
-
-    def __init__(self, x0, P0, f):
-        print("CD-UKF has been discontinued... Sorry" )
-        exit()
-        super(CD_UKF, self).__init__(x0, P0,f)
-
-        #extra variable needed to the root version
-        self.sigmaX = None
-
-        self._n = len(x0)
-        self.cython = use_cython
-        self.osc_cython = osc_cython
-
-    def predict(self,date_in,date_out,Q,method):
-        if date_in == date_out:
-            return
-        if not self.cython:
-            dynfun = lambda t,y: predic_dif_eq_sqroot(t,y,self.f, self.W_m,self.W,Q,self._n,self.lamb)
-        else:
-            dynfun = lambda t,y: predict_cython(t,y,self.osc_cython, self.W_m,self.W,Q,self._n,self.lamb)
-
-        #initialize sigma X matrix for the integration
-        A = cholesky(self.P, lower=True)
-
-        n = self._n
-        sigmaX = np.full((2*n+1,n),self.x).T
-        self.sigmaX = sigmaX + np.sqrt(n+self.lamb)*np.block([np.zeros((n,1)),A,-A])
-
-        #integrate function
-        Y0 = self.sigmaX.flatten()
-        solver = integrate.solve_ivp(dynfun, (date_in,date_out),
-                                     Y0, method=method, t_eval=[date_out])
-
-
-        solver.y = solver.y.flatten()
-
-        #unpack the sigma Matrix and get the state
-        sigmaX = np.reshape(solver.y,(n,2*n+1))
-        x = sigmaX[0:,0]
-        mMatrix = np.full((n,n),x).T
-        A = (sigmaX[0:,1:n+1] - mMatrix) / np.sqrt(n+self.lamb)
-        self.x = x.copy()
-        self.P = A @ A.T

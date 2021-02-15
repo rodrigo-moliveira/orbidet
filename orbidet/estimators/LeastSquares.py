@@ -6,6 +6,7 @@ import numpy as np
 from scipy import integrate
 import scipy
 
+from beyond.beyond.orbits import Orbit
 from orbidet.errors import LSnotConverged
 from .utils import first_order_state_cov_differential_equation_cartesian as diff_eq
 
@@ -74,7 +75,10 @@ class LeastSquares():
         i = 0
         for date, obs in DF_obs:
             #for t_i unpack the STM phi(ti,t0) and state X(ti)
-            col_i = results.y[:,i]
+            try: #sometimes, this algortitm does not converge, and an IndexError is raised here
+                col_i = results.y[:,i]
+            except IndexError:
+                raise LSnotConverged()
             Y_matrix = np.reshape(col_i,(7,6))
             x_i = Y_matrix[0]               #state X(t=ti)
             phi_i = Y_matrix[1:] #phi(ti,t0)
@@ -131,7 +135,7 @@ class LeastSquares():
     def get_P0(self):
         return np.linalg.inv(self.Lambda)
 
-    def get_propagated_solution(self):
+    def get_propagated_solution(self,frameECI):
         # We cannot simply multiply X0 with the transition matrix (X(tf) = phi(tf,t0) * X(t0))
         # I'll solve the numerical dif. eq.
         t0 = self.t[0]
@@ -142,4 +146,4 @@ class LeastSquares():
 
         x = results.y.flatten()
         P = self.phi_final @ self.get_P0() @ self.phi_final.T
-        return x,P,self.final_epoch
+        return Orbit(x,self.final_epoch,"cartesian",frameECI,None),P,self.final_epoch

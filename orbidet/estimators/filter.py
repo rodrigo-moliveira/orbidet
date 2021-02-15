@@ -10,11 +10,12 @@ from .EKF import EKF
 from .UKF import UKF
 from .ESKF import ESKF
 from .USKF import USKF
-from .utils import CartesianCov_to_MeanEq,MeanEqCov_to_cartesian
-from orbidet.propagators.utils import cartesian_osculating_state_fct
-from .utils import first_order_state_cov_differential_equation_cartesian
+from .utils import *
+from orbidet.propagators.utils import cartesian_osculating_state_fct,equinoctial_mean_state_fct
+from orbidet.propagators.mean_osc_maps import SemianalyticalMeanOscMap
 
-class OsculatingFilter():
+
+class CowellFilter():
     def __init__(self,filter,orbit,t,P0,Q, observer,force,ECI_frame,solver,
                  maximum_dt = timedelta(seconds=30),**kwargs):
         """
@@ -38,14 +39,16 @@ class OsculatingFilter():
         self.solver = solver
         self.date = Date(t)
 
-        f = lambda t,x : first_order_state_cov_differential_equation_cartesian(t,x,force)
+
         if filter is "EKF":
+            f = lambda t,x : first_order_state_cov_differential_equation_cartesian(t,x,force)
             self.filter = EKF(np.array(orbit),P0,f)
 
-        # elif filter is "UKF":
-        #     f_discrete = lambda x0,t0,t1: (solve_ivp(state_fct,(t0,t1),np.array(x0),method=solver,
-        #                                             t_eval=[t1])).y.flatten()
-        #     self.filter = UKF(np.array(orbit),P0,f_discrete)
+        elif filter is "UKF":
+            f = lambda t,x : cartesian_osculating_state_fct(t,x,force)
+            f_discrete = lambda x0,t0,t1: (solve_ivp(f,(t0,t1),np.array(x0),method=solver,
+                                                    t_eval=[t1])).y.flatten()
+            self.filter = UKF(np.array(orbit),P0,f_discrete)
         else:
             raise Exception("Unknown filter {}".format(filter))
 
@@ -81,30 +84,18 @@ class OsculatingFilter():
 
 
 
-def obs_jacobian_wrt_equinoctial(t,x,H,frame):
-    orb = Orbit(t,x,"equinoctial",frame,None)
-    Dosc_Dequict = partials_cartesian_wrt_equinocital(orb)
-    orb.form = "cartesian"
-    grad_h = H(orb)
-    return grad_h @ Dosc_Dequict
 
-def create_lambda_h(observer,frame):
-    return lambda t,x: observer.h(Orbit(t,x,"equinoctial",frame,None).copy(
-        form="cartesian"),delete=True)
-def create_lambda_H(observer,frame,date):
-    H = lambda x: observer.grad_h(x,date,frame=frame)
-    return lambda t,x : obs_jacobian_wrt_equinoctial(t,x,H,frame)
 
-class MeanFilter():
-    def __init__(self,filter,orbit,P0,initial_state_str,date,Q, observers,force,force_simplified,ECI_frame,solver,integration_stepsize,
+
+
+class SemianalyticalFilter():
+    def __init__(self,filter,orbit,P0,date,Q, observer,force,ECI_frame,solver,integration_stepsize,
                  quadrature_order = 30,DFT_lmb_len = 64, DFT_sideral_len=32):
         """
         args:
             *filter (str) - ESKF, USKF
             *orbit (Orbit) - initial orbit
             *P0 (numpy.ndarray) - initial cov matrix
-            *initial_state_str - "cartesian" or "equinoctial". If it is in "cartesian", then a transformation of
-                    (mean,cov) to equinoctial form is performed
             *Q(``) - default process noise
             *observers (list of SatelliteObserver or GroundStation)
             *force (ForceModel) force model to use in the state fct
@@ -112,97 +103,79 @@ class MeanFilter():
             integration_stepsize (timedelta)
             quadrature order, DFT lens  (ints)
         """
-        self.observers = observers
-        if Q["type"] is not "continuous" and Q["type"] is not "discrete":
-            raise Exception("Q type should be 'continuous' or 'discrete'")
+        self.observer = observer
         self.Q = Q
         self.ECI_frame = ECI_frame
         self.solver = solver
+        self.short_period_tf = SemianalyticalMeanOscMap(force,DFT_LEN=DFT_lmb_len,SIDEREAL_LEN=DFT_sideral_len)
 
-        if force.DRAG:
-            _types = ("zonals","drag")
-        else:
-            _types = ("zonals",)
+        # creating state function lambdas
+        state_fct = lambda t,x : equinoctial_mean_state_fct(t,x,force,quadrature_order)
+        jacobian_state_fct = lambda t,x : finite_differencing(state_fct,x,t,np.array([0.001,1e-7,1e-07,1e-06,1e-06,1e-06]))
 
-        self.short_period_tf = NumAv_MEP_transf(force,DFT_LEN=DFT_lmb_len,SIDEREAL_LEN=DFT_sideral_len)
-        short_period_tf_simplified = NumAv_MEP_transf(force_simplified,DFT_LEN=DFT_lmb_len,SIDEREAL_LEN=DFT_sideral_len)
-        self.getFourierCoefs = short_period_tf_simplified.getFourierCoefs
+        f_etas = lambda t,x : self.short_period_tf.getEtasFromFourierCoefs(
+            self.short_period_tf.getFourierCoefs(x,False),x,False)
+        self.B1 = lambda t,x : finite_differencing(f_etas,Orbit(x,t,"equinoctial_mean",ECI_frame,None),t,
+                        np.array([1e-5,1e-10,1e-10,1e-10,1e-10,1e-10]))
 
-        # state functions
-        f = lambda t,x : force.equinoctial_state_fct(t,x,force,_types,quadrature_order)
-        epsons = np.array([0.001,1e-7,1e-07,1e-06,1e-06,1e-06])
-        graf_f = lambda t,x : finite_differencing(f,x,t,epsons)
-        f_etas = lambda t,x : short_period_tf_simplified.getEtasFromFourierCoefs(
-            short_period_tf_simplified.getFourierCoefs(x,False),x,False)
-        epsons = np.array([1e-5,1e-10,1e-10,1e-10,1e-10,1e-10])
-        self.B1 = lambda t,x : finite_differencing(f_etas,Orbit(t,x,"equinoctial",ECI_frame,None),t,epsons)
-        self.hs = []
-        self.Hs = []
-        self.Rs = []
-        for observer in self.observers:
-            # h = lambda t,x: observer.h(Orbit(t,x,"equinoctial",self.ECI_frame,None).copy(
-            #     form="cartesian"),delete=True)
-            h = create_lambda_h(observer,self.ECI_frame)
-            H = create_lambda_H(observer,self.ECI_frame,date)
-            # H = lambda x: observer.grad_h(x,date,frame=self.ECI_frame)
-            self.hs.append(h)
-            # self.Hs.append(lambda t,x : obs_jacobian_wrt_equinoctial(t,x,H,ECI_frame))
-            self.Hs.append(H)
-            self.Rs.append(observer.R_default)
-        f_discrete = lambda x0,t0,t1: (solve_ivp(f,(t0.mjd*86400,t1.mjd*86400),np.array(x0),method=solver,
+        # observation functions from 'observer' are defined with respect to cartesian osculating state,
+        # hence, a transformation to mean equinoctial is needed
+        self.h = lambda t,x: observer.h(Orbit(x,t,"equinoctial_mean",ECI_frame,None).copy(form="cartesian"))
+        H = lambda x: observer.jacobian_h(x,date,frame=ECI_frame)
+        self.jacobian_h = lambda t,x : obs_jacobian_wrt_equinoctial(t,x,H,ECI_frame)
+
+
+        state_fct_discrete = lambda x0,t0,t1: (solve_ivp(state_fct,(t0.mjd*86400,t1.mjd*86400),np.array(x0),method=solver,
                                                 t_eval=[t1.mjd*86400])).y.flatten()
-        # f_discrete = lambda x0,t0,t1: discrete_cy(x0,t0.mjd*86400,t1.mjd*86400,(t1-t0).total_seconds(),f)
 
         # creating initial conditions (mean and covariance transformation from osc cartesian to mean equinoctial)
-        if initial_state_str is "cartesian":
-            _orbit = Orbit(date, orbit,"cartesian",self.ECI_frame,None)
-            orbit = short_period_tf_simplified.osc_to_mean(_orbit)
+        if str(orbit.form) is "cartesian":
+            orbit = self.short_period_tf.osc_to_mean(orbit.copy())
             P0 = CartesianCov_to_MeanEq(P0,partials_cartesian_wrt_equinocital(orbit.copy()))
-        elif initial_state_str is not "equinoctial":
+        elif str(orbit.form) is not "equinoctial_mean":
             raise Exception("Unknown initial state format")
 
 
         # creating filter instance
         if filter is "ESKF" or filter is "EKF":
-            self.filter = ESKF(orbit,P0,f,graf_f,Q,self.short_period_tf.mean_to_osc,
-                               short_period_tf_simplified.getEtasFromFourierCoefs)
-        elif filter is "UKF" or filter is "USKF":
-            self.filter = USKF(orbit,P0,f_discrete,Q,
-                               short_period_tf_simplified.getEtasFromFourierCoefs,
-                               short_period_tf_simplified.mean_to_osc)
+            self.filter = ESKF(orbit,P0,state_fct,jacobian_state_fct,Q,self.short_period_tf.mean_to_osc,
+                               self.short_period_tf.getEtasFromFourierCoefs)
+        # elif filter is "UKF" or filter is "USKF":
+        #     self.filter = USKF(orbit,P0,f_discrete,Q,
+        #                        short_period_tf_simplified.getEtasFromFourierCoefs,
+        #                        short_period_tf_simplified.mean_to_osc)
         self._currentgrid_date = Date(date) #t0
         self.integration_stepsize = integration_stepsize
-
         # Do an integration grid step
         self.filter.integration_grid(date,date+integration_stepsize,solver,self.ECI_frame,
-                                     self.getFourierCoefs)
+                                     self.short_period_tf.getFourierCoefs)
 
-    def filtering_cycle(self,date,ys):
+    def filtering_cycle(self,date,y,observer):
         Sinv,residuals = None,None
         if (date == self._currentgrid_date+self.integration_stepsize):
             # print("last observation of grid ",date)
-            self.filter.observation_grid(ys,self.hs,self.Rs,date,self.ECI_frame,self.Hs,self.B1)
+            self.filter.observation_grid(y,self.h,observer.R_default,date,self.ECI_frame,self.jacobian_h,self.B1)
             # print("Defining new grid ",date,date+self.integration_stepsize)
             self.filter.integration_grid(date,date+self.integration_stepsize,
                                          self.solver,self.ECI_frame,
-                                         self.getFourierCoefs)
+                                         self.short_period_tf.getFourierCoefs)
             self._currentgrid_date += self.integration_stepsize
         elif (date > self._currentgrid_date+self.integration_stepsize):
             # print("predicting until grid end",self._currentgrid_date+self.integration_stepsize)
-            self.filter.observation_grid([None],self.hs,self.Rs,
+            self.filter.observation_grid(None,self.h,observer.R_default,
                                          self._currentgrid_date+self.integration_stepsize,
-                                         self.ECI_frame,self.Hs,self.B1)
+                                         self.ECI_frame,self.jacobian_h,self.B1)
             self.filter.integration_grid(self._currentgrid_date+self.integration_stepsize,
                                          self._currentgrid_date+2*self.integration_stepsize,
                                          self.solver,self.ECI_frame,
-                                         self.getFourierCoefs)
-            self.filter.observation_grid(ys,self.hs,self.Rs,date,self.ECI_frame,self.Hs,self.B1)
+                                         self.short_period_tf.getFourierCoefs)
+            self.filter.observation_grid(ys,self.h,observer.R_default,date,self.ECI_frame,self.jacobian_h,self.B1)
             self._currentgrid_date += self.integration_stepsize
 
 
         else:
             # print("Inside observation grid",date)
-            self.filter.observation_grid(ys,self.hs,self.Rs,date,self.ECI_frame,self.Hs,self.B1)
+            self.filter.observation_grid(y,self.h,observer.R_default,date,self.ECI_frame,self.jacobian_h,self.B1)
 
         return (Sinv,residuals)
 
