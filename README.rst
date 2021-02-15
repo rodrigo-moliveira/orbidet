@@ -14,6 +14,18 @@ to the theory developed in the aforementioned references. A simplified force mod
 
 was coded.
 
+The filters implemented are:
+
+      *Gauss Initial Orbit Determination
+
+      * Batch Least Squares
+
+      *Extended and Unscented Cowell Kalman Filter (EKF and UKF)
+
+      *Extended and Unscented Semianalytical Kalman Filter (ESKF and USKF)
+
+USKF is an original contribution of my thesis.
+
 This library was build on the Beyond Package (`github <https://github.com/galactics/beyond>`) by Jules David,
 which takes care of the low-level treatment of orbital definitions (orbits, time, reference frame rotations,...).
 I needed to do some changes on Beyond to better accommodate my code. These changes made in the 'orbidet.__init__.py'
@@ -44,9 +56,13 @@ Package Requirements
 ----------
 
 Numpy
+
 Scipy
+
 matplotlib
+
 pandas
+
 Beyond (an explicit copy of the version 0.7.2 is included here)
 
 
