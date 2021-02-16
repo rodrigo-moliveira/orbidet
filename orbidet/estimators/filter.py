@@ -73,11 +73,11 @@ class CowellFilter():
         return (None,None)
 
     @property
-    def x(self):
+    def x_osc(self):
         return self.filter.x
 
     @property
-    def P(self):
+    def P_osc(self):
         return self.filter.P
 
 
@@ -125,9 +125,6 @@ class SemianalyticalFilter():
         self.jacobian_h = lambda t,x : obs_jacobian_wrt_equinoctial(t,x,H,ECI_frame)
 
 
-        state_fct_discrete = lambda x0,t0,t1: (solve_ivp(state_fct,(t0.mjd*86400,t1.mjd*86400),np.array(x0),method=solver,
-                                                t_eval=[t1.mjd*86400])).y.flatten()
-
         # creating initial conditions (mean and covariance transformation from osc cartesian to mean equinoctial)
         if str(orbit.form) is "cartesian":
             orbit = self.short_period_tf.osc_to_mean(orbit.copy())
@@ -137,13 +134,16 @@ class SemianalyticalFilter():
 
 
         # creating filter instance
-        if filter is "ESKF" or filter is "EKF":
+        if filter is "ESKF":
             self.filter = ESKF(orbit,P0,state_fct,jacobian_state_fct,Q,self.short_period_tf.mean_to_osc,
                                self.short_period_tf.getEtasFromFourierCoefs)
-        # elif filter is "UKF" or filter is "USKF":
-        #     self.filter = USKF(orbit,P0,f_discrete,Q,
-        #                        short_period_tf_simplified.getEtasFromFourierCoefs,
-        #                        short_period_tf_simplified.mean_to_osc)
+        elif filter is "USKF":
+            state_fct_discrete = lambda x0,t0,t1: (solve_ivp(state_fct,(t0.mjd*86400,t1.mjd*86400),np.array(x0),method=solver,
+                                                    t_eval=[t1.mjd*86400])).y.flatten()
+            self.filter = USKF(orbit,P0,state_fct_discrete,Q,
+                               self.short_period_tf.getEtasFromFourierCoefs,
+                               self.short_period_tf.mean_to_osc)
+
         self._currentgrid_date = Date(date) #t0
         self.integration_stepsize = integration_stepsize
         # Do an integration grid step

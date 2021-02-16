@@ -131,19 +131,11 @@ class ESKF():
         Cy3 = getFourierCoefs(orbs[3],True)
         dct = {}
         for _type in Cy0.keys():
-            Cf0 = [Cy0[_type][0],Cy1[_type][0],Cy2[_type][0],Cy3[_type][0]]
-            Cf1 = [Cy0[_type][1],Cy1[_type][1],Cy2[_type][1],Cy3[_type][1]]
-            Cf2 = [Cy0[_type][2],Cy1[_type][2],Cy2[_type][2],Cy3[_type][2]]
-            Cf3 = [Cy0[_type][3],Cy1[_type][3],Cy2[_type][3],Cy3[_type][3]]
-            Cf4 = [Cy0[_type][4],Cy1[_type][4],Cy2[_type][4],Cy3[_type][4]]
-            Cf5 = [Cy0[_type][5],Cy1[_type][5],Cy2[_type][5],Cy3[_type][5]]
+            Cf = [[Cy0[_type][0],Cy1[_type][0],Cy2[_type][0],Cy3[_type][0]],[Cy0[_type][1],Cy1[_type][1],Cy2[_type][1],Cy3[_type][1]],
+            [Cy0[_type][2],Cy1[_type][2],Cy2[_type][2],Cy3[_type][2]],[Cy0[_type][3],Cy1[_type][3],Cy2[_type][3],Cy3[_type][3]],
+            [Cy0[_type][4],Cy1[_type][4],Cy2[_type][4],Cy3[_type][4]],[Cy0[_type][5],Cy1[_type][5],Cy2[_type][5],Cy3[_type][5]]]
             dct[_type] = {
-                "0":CubicSpline(_tflt,Cf0,axis=0),
-                "1":CubicSpline(_tflt,Cf1,axis=0),
-                "2":CubicSpline(_tflt,Cf2,axis=0),
-                "3":CubicSpline(_tflt,Cf3,axis=0),
-                "4":CubicSpline(_tflt,Cf4,axis=0),
-                "5":CubicSpline(_tflt,Cf5,axis=0)}
+                "0":CubicSpline(_tflt,Cf,axis=1)}
         self.short_period_interpolator = dct
 
 
@@ -157,10 +149,6 @@ class ESKF():
         x_t = self.state_interpolator(t.mjd*86400)
         phi_t = self.phi_interpolator(t.mjd*86400)
         phi_inv_t = self.phi_S
-        # print(x_t)
-        # print(phi_t)
-        # print(phi_inv_t)
-        # exit()
 
         # interpolate short period function etas
         dctFouriers = self.interpolate_SPG(t.mjd*86400,self.short_period_interpolator)
@@ -206,13 +194,8 @@ class ESKF():
     def interpolate_SPG(self,t,interpolator):
         ret = {}
         for _type in interpolator.keys():
-            Cf0 = interpolator[_type]["0"](t)
-            Cf1 = interpolator[_type]["1"](t)
-            Cf2 = interpolator[_type]["2"](t)
-            Cf3 = interpolator[_type]["3"](t)
-            Cf4 = interpolator[_type]["4"](t)
-            Cf5 = interpolator[_type]["5"](t)
-            ret[_type] = [Cf0,Cf1,Cf2,Cf3,Cf4,Cf5]
+            Cf = interpolator[_type]["0"](t)
+            ret[_type] = Cf
         return ret
 
 

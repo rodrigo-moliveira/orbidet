@@ -64,7 +64,7 @@ def main():
                         50,      #mass [kg]
                         2)      #area [m²]
     force = Force(integrationFrame = frameECI, gravityFrame = frameECEF)
-    grav = GravityAcceleration(5,5)
+    grav = GravityAcceleration(5,0)
     DragHandler = ExponentialDragDb()
     drag = AtmosphericDrag(sat,DragHandler)
     two_body = TwoBody()
@@ -76,7 +76,7 @@ def main():
 
     ################# Estimation Setup #################
     InitialOD_LEN = 10 # Number of observations to collect in initialization procedure
-    filterName = "ESKF" #possible filters: EKF, UKF, ESKF or USKF
+    filterName = "USKF" #possible filters: EKF, UKF, ESKF or USKF
     Q_cartesian = np.block([[10**-9*np.eye(3),np.zeros((3,3))],[np.zeros((3,3)),10**-12*np.eye(3)]]) #process noise cov
     Q_equinoctial = np.diag([1e-10,1e-14,1e-14,1e-14,1e-14,1e-12])
     metrics = Metrics(MonteCarlo,RMSE_errors = True,
