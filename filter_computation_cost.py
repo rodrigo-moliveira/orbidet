@@ -5,6 +5,7 @@
     - Kalman filter - Cowell filter (EKF or UKF), Semianalytical filter (ESKF or USKF)
 """
 import os
+import time
 
 import numpy as np
 
@@ -26,7 +27,7 @@ def main():
     ################# defining initial conditions and simulation setup #################
     start = Date(2000,4,6,11,0,0)
     step = timedelta(seconds = 5)
-    stop = start + timedelta(hours = 6)
+    stop = start + timedelta(hours = 24)
     MonteCarlo = 1 #number of Monte Carlo runs to run the simulation
 
     # frames
@@ -76,77 +77,87 @@ def main():
 
     ################# Estimation Setup #################
     InitialOD_LEN = 10 # Number of observations to collect in initialization procedure
-    filterName = "USKF" #possible filters: EKF, UKF, ESKF or USKF
+    filterName = "UKF" #possible filters: EKF, UKF, ESKF or USKF
     Q_cartesian = np.block([[10**-9*np.eye(3),np.zeros((3,3))],[np.zeros((3,3)),10**-12*np.eye(3)]]) #process noise cov
     Q_equinoctial = np.diag([1e-10,1e-14,1e-14,1e-14,1e-14,1e-12])
-    metrics = Metrics(MonteCarlo,RMSE_errors = True,
-                                              consistency_tests = True,abs_erros=True,frames = ("ECI","RSW"))
 
 
     ################# simulation #################
-    run = 1
-    while run <= MonteCarlo:
-        print('Monte Carlo run %d'%run)
 
-        gen = prop.iter(step=step,stop=stop,start=start)
-        # The algorithm should only start when there is LOS (consume observations until LOS)
-        if LOS:
-            y = None
-            while y is None:
-                orbit = next(gen)
-                y = get_obs(orbit.copy(),observer,dict_std,apply_noise,LOS)
-
-        # setup Initial Orbit Determination (10 observations)
-        IOD = []
-        while len(IOD) < InitialOD_LEN:
+    gen = prop.iter(step=step,stop=stop,start=start)
+    # The algorithm should only start when there is LOS (consume observations until LOS)
+    if LOS:
+        y = None
+        while y is None:
             orbit = next(gen)
-            y = get_obs(orbit,observer,dict_std,apply_noise,LOS)
-            if y is not None:
-                IOD.append([orbit.date,y])
+            y = get_obs(orbit.copy(),observer,dict_std,apply_noise,LOS)
 
-        # run Gauss Initial Orbit Determination algorithm
-        gauss = Gauss(IOD[0:3],observer,frameECI)
+    # setup Initial Orbit Determination (10 observations)
+    IOD = []
+    while len(IOD) < InitialOD_LEN:
+        orbit = next(gen)
+        y = get_obs(orbit,observer,dict_std,apply_noise,LOS)
+        if y is not None:
+            IOD.append([orbit.date,y])
 
-        # run batch least squares
-        t = IOD[3][0]
-        orbit = gauss.get_propagated_solution(t,force)
-        try:
-            LS = LeastSquares(IOD[3:],orbit,observer.R_default,0.1,observer.jacobian_h,observer.h,force)
-        except LSnotConverged:
-            print("this MC did not converge. Retrying this Monte Carlo run")
-            continue
-        orbit,P,t = LS.get_propagated_solution(frameECI)
+    # run Gauss Initial Orbit Determination algorithm
+    gauss = Gauss(IOD[0:3],observer,frameECI)
 
-        # create Kalman filter (uncomment desired filter: Cowell or Semianalytical)
-        # filter = CowellFilter(filterName,orbit,t,P,Q_cartesian, observer,force,frameECI,"RK45")
+    # run batch least squares
+    t = IOD[3][0]
+    orbit = gauss.get_propagated_solution(t,force)
+    try:
+        LS = LeastSquares(IOD[3:],orbit,observer.R_default,0.1,observer.jacobian_h,observer.h,force)
+    except LSnotConverged:
+        print("this MC did not converge. Retrying this Monte Carlo run")
+        exit()
+    orbit,P,t = LS.get_propagated_solution(frameECI)
+
+    time0 = time.time()
+    # create Kalman filter (uncomment desired filter: Cowell or Semianalytical)
+    if (filterName == "EKF" or filterName == "UKF"):
+        filter = CowellFilter(filterName,orbit,t,P,Q_cartesian, observer,force,frameECI,"RK45")
+    else:
         filter = SemianalyticalFilter(filterName,orbit,P,t,Q_equinoctial,
-                          observer,force,frameECI,"RK45",timedelta(hours=1),
-                          quadrature_order = 20,DFT_lmb_len = 16, DFT_sideral_len=16)
+                      observer,force,frameECI,"RK45",timedelta(hours=6),
+                      quadrature_order = 20,DFT_lmb_len = 16, DFT_sideral_len=16)
 
-        # continue the simulation until the end of the generator
-        for orbit in gen:
-            ECI_to_RSW = matrix_RSW_to_ECI(np.array(orbit[0:3]),np.array(orbit[3:])).T
-            t = (orbit.date - start).total_seconds()
-
-            y = get_obs(orbit.copy(),observer,dict_std,apply_noise,LOS) #get reference observation and corrupt it with noise
-            invS,v = filter.filtering_cycle(orbit.date,y,observer)
-            metrics.append_estimation(t,np.array(orbit),filter.x_osc.copy(form="cartesian"),
-                    R_ECI_to_RSW=ECI_to_RSW,P = filter.P_osc,Sinv = invS,obs_err = v)
-            print(orbit.date)
+    # continue the simulation until the end of the generator
+    passage = False
+    counter = 0
 
 
+    for orbit in gen:
+        t = (orbit.date - start).total_seconds()
 
-        run += 1
+        y = get_obs(orbit.copy(),observer,dict_std,apply_noise,LOS) #get reference observation and corrupt it with noise
 
-    # process estimation metrics
-    path = "./results/"
-    save = False
-    if save and not os.path.exists(path):
-        os.makedirs(path)
+        filter.filtering_cycle(orbit.date,y,observer)
+            #print(orbit.date, " -> process obs")
 
-    metrics.process_results(path+"_osc_"+filterName,save=save)
-    metrics.plot_results(len(sensors_GS),6,n=-1,side_consistency="one-sided",prob_consistency=0.95,
-                            filter_name = filterName)
+    #for orbit in gen:
+    #    t = (orbit.date - start).total_seconds()
+
+#        y = get_obs(orbit.copy(),observer,dict_std,apply_noise,LOS) #get reference observation and corrupt it with noise
+
+#        if y is None:
+#            passage = False
+#            counter += 5
+#            if (counter == 5*60):
+#                filter.filtering_cycle(orbit.date,y,observer)
+                #print(orbit.date, " -> no obs")
+#                counter = 0
+#        else:
+#            passage = True
+#            counter = 0
+#            filter.filtering_cycle(orbit.date,y,observer)
+            #print(orbit.date, " -> process obs")
+
+
+    deltaTime = time.time() - time0
+    print("Execution time: ", deltaTime)
+
+
 
 
 

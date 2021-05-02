@@ -169,7 +169,7 @@ class SemianalyticalFilter():
                                          self._currentgrid_date+2*self.integration_stepsize,
                                          self.solver,self.ECI_frame,
                                          self.short_period_tf.getFourierCoefs)
-            self.filter.observation_grid(ys,self.h,observer.R_default,date,self.ECI_frame,self.jacobian_h,self.B1)
+            self.filter.observation_grid(y,self.h,observer.R_default,date,self.ECI_frame,self.jacobian_h,self.B1)
             self._currentgrid_date += self.integration_stepsize
 
 
